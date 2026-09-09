@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** langsung dari Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
 
 URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
 
@@ -55,12 +55,11 @@ def parse_items_to_df(items):
     df.rename(columns=renamed_cols, inplace=True)
     return df
 
-# Format Payload Persis Sesuai Kebutuhan Server KFA
 def build_payload(keyword, page, size):
     return {
         "page": int(page),
         "size": int(size),
-        "search": keyword.strip() if keyword else "",
+        "search": keyword.strip(),
         "kfa_code": "",
         "bmhp": "",
         "made_origin": "",
@@ -70,17 +69,16 @@ def build_payload(keyword, page, size):
 
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-# Size dibatasi maks 100 agar server Kemenkes tidak menolak/block request
 batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=100, step=10)
-max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong untuk semua data)", value="")
+max_pages = st.sidebar.number_input("Batas Maksimal Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1)
+search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Jika kosong, akan auto-fetch kata kunci huruf vokal)", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
 
 @st.cache_data(ttl=3600)
-def get_variant_schema():
-    payload = build_payload("", 1, 5)
+def get_variant_schema(sample_query):
+    payload = build_payload(sample_query, 1, 5)
     try:
         resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=10)
         if resp.status_code == 200:
@@ -107,7 +105,8 @@ def get_variant_schema():
         "Pabrik"
     ]
 
-sample_columns = get_variant_schema()
+sample_query = search_keyword if search_keyword.strip() else "cath"
+sample_columns = get_variant_schema(sample_query)
 
 PREFERRED_ORDER = [
     "Kode KFA (PA)",
@@ -131,67 +130,77 @@ st.divider()
 start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="primary")
 
 if start_download:
-    all_data = []
-    page = 1
+    all_raw_data = []
+    seen_ids = set()  # Untuk membuang data duplikat jika menggunakan multiple keyword
     
     status_text = st.empty()
     table_placeholder = st.empty()
 
-    while True:
-        status_text.info(f"⏳ Sedang mengambil data Produk Varian Halaman **{page}** ({batch_size} item per request)...")
-        
-        payload = build_payload(search_keyword, page, batch_size)
-        
-        try:
-            response = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                res_json = response.json()
-                
-                items = []
-                if isinstance(res_json, dict):
-                    items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
-                    if isinstance(items, dict):
-                        items = items.get('items') or items.get('data') or []
-                elif isinstance(res_json, list):
-                    items = res_json
-                
-                if not items:
-                    if page == 1:
-                        status_text.warning("⚠️ Tidak ada data yang ditemukan. Coba masukkan kata kunci pencarian singkat (misal: 'cath' atau 'syringe').")
-                    else:
-                        status_text.success(f"✅ Penarikan data selesai! Total **{len(all_data)}** data varian berhasil diambil.")
-                    break
-                    
-                all_data.extend(items)
-                status_text.info(f"🔄 Berhasil mengambil **{len(items)}** varian dari Halaman {page} (Total Sementara: **{len(all_data)}** data)")
-                
-                df_current = parse_items_to_df(all_data)
-                if selected_columns:
-                    cols_to_show = [c for c in selected_columns if c in df_current.columns]
-                    if cols_to_show:
-                        df_current = df_current[cols_to_show]
-                table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
-                
-                if len(items) < batch_size:
-                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_data)}** data varian berhasil diambil.")
-                    break
-                    
-                if max_pages > 0 and page >= max_pages:
-                    status_text.warning(f"⚠️ Penarikan dihentikan karena mencapai batas halaman ({max_pages}). Total: **{len(all_data)}** data.")
-                    break
-                    
-                page += 1
-            else:
-                status_text.error(f"❌ HTTP Error {response.status_code} pada halaman {page}.")
-                break
-                
-        except Exception as e:
-            status_text.error(f"❌ Terjadi kesalahan koneksi: {str(e)}")
-            break
+    # Jika user tidak mengisi kata kunci, gunakan daftar huruf umum
+    keywords_to_search = [search_keyword.strip()] if search_keyword.strip() else ["a", "e", "i", "o", "u"]
 
-    if all_data:
-        st.session_state["all_fetched_data"] = all_data
+    for kw in keywords_to_search:
+        page = 1
+        st.toast(f"Mulai mencari kata kunci: '{kw}'")
+        
+        while True:
+            status_text.info(f"⏳ Kata kunci **'{kw}'** | Halaman **{page}** ({batch_size} item per request)...")
+            
+            payload = build_payload(kw, page, batch_size)
+            
+            try:
+                response = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    res_json = response.json()
+                    
+                    items = []
+                    if isinstance(res_json, dict):
+                        items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
+                        if isinstance(items, dict):
+                            items = items.get('items') or items.get('data') or []
+                    elif isinstance(res_json, list):
+                        items = res_json
+                    
+                    if not items:
+                        break
+                        
+                    # Eliminasi duplikat berdasarkan kfa_code atau kfaCode
+                    added_count = 0
+                    for item in items:
+                        code = item.get('kfa_code') or item.get('kfaCode') or item.get('id') or str(item)
+                        if code not in seen_ids:
+                            seen_ids.add(code)
+                            all_raw_data.append(item)
+                            added_count += 1
+                            
+                    status_text.info(f"🔄 Kata kunci **'{kw}'** | Halaman {page}: Berhasil menambah **{added_count}** data baru (Total Unik: **{len(all_raw_data)}**)")
+                    
+                    df_current = parse_items_to_df(all_raw_data)
+                    if selected_columns:
+                        cols_to_show = [c for c in selected_columns if c in df_current.columns]
+                        if cols_to_show:
+                            df_current = df_current[cols_to_show]
+                    table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
+                    
+                    if len(items) < batch_size:
+                        break
+                        
+                    if max_pages > 0 and page >= max_pages:
+                        break
+                        
+                    page += 1
+                else:
+                    status_text.error(f"❌ HTTP Error {response.status_code} pada halaman {page}.")
+                    break
+                    
+            except Exception as e:
+                status_text.error(f"❌ Terjadi kesalahan koneksi: {str(e)}")
+                break
+
+    if all_raw_data:
+        status_text.success(f"✅ Penarikan data selesai! Total **{len(all_raw_data)}** data unik berhasil dikumpulkan.")
+        st.session_state["all_fetched_data"] = all_raw_data
 
 if st.session_state["all_fetched_data"]:
     st.divider()
