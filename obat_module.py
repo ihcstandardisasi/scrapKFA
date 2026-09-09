@@ -81,11 +81,11 @@ def render_obat_page():
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        batch_size = st.number_input("Jumlah Data Per Request (Max 100)", min_value=1, max_value=100, value=10, step=10, key="obat_size")
+        batch_size = st.number_input("Jumlah Data Per Request (Size)", min_value=1, max_value=1000, value=100, step=10, key="obat_size")
     with col2:
         max_pages = st.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (contoh: 'paracetamol')", value="paracetamol", key="obat_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian", value="paracetamol", key="obat_keyword")
         
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
@@ -105,12 +105,13 @@ def render_obat_page():
         while True:
             status.info(f"⏳ Mengambil Data dengan Kata Kunci: **'{active_search}'** | Halaman **{page}** ({batch_size} item/request)...")
             
-            # Payload disesuaikan dengan contoh persis dari browser DevTools
+            # Payload lengkap dengan kfa_code dan field pelengkap
             payload = {
                 "page": int(page),
                 "size": int(batch_size),
                 "search": str(active_search),
                 "search_by": "name",
+                "kfa_code": "",
                 "farmalkes_type": ""
             }
             
@@ -119,7 +120,6 @@ def render_obat_page():
                 if resp.status_code == 200:
                     res_json = resp.json()
                     
-                    # Parsing item dari key 'data'
                     items = res_json.get("data", [])
                     if isinstance(items, dict):
                         items = items.get("data", [])
@@ -142,7 +142,6 @@ def render_obat_page():
                         break
                     page += 1
                 else:
-                    # Jika gagal, tampilkan detail pesan error dari server jika ada
                     error_msg = ""
                     try:
                         error_msg = resp.json().get("message") or resp.text
