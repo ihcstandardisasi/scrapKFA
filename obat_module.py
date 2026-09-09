@@ -18,13 +18,13 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
-            "Nama Produk": item.get("name") or item.get("product_variant_name") or item.get("productVariantName") or "",
-            "Merk Dagang": item.get("tradeName") or item.get("trade_name") or "",
-            "Unit Logistik Terkecil": item.get("uomName") or item.get("uom_name") or "",
-            "Bentuk Sediaan": item.get("dosageFormName") or item.get("dosage_form_name") or "",
+            "Kode KFA": item.get("kfaCode", ""),
+            "Nama Produk": item.get("name") or item.get("productVariantName") or "",
+            "Merk Dagang": item.get("tradeName", ""),
+            "Unit Logistik Terkecil": item.get("uomName", ""),
+            "Bentuk Sediaan": item.get("dosageFormName", ""),
             "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
-            "Nomor Izin Edar": item.get("nie") or "",
+            "Nomor Izin Edar": item.get("nie", ""),
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
         }
     },
@@ -34,10 +34,10 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
+            "Kode KFA": item.get("kfaCode", ""),
             "Nama Produk Cangkang": item.get("name") or item.get("productTemplateName") or "",
-            "Total Varian": item.get("totalVariants") or item.get("total_variants") or 0,
-            "Unit Logistik": item.get("uomName") or item.get("uom_name") or "",
+            "Total Varian": item.get("totalVariants", 0),
+            "Unit Logistik": item.get("uomName", ""),
             "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
         }
@@ -48,12 +48,12 @@ CATEGORIES = {
         "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "parser": lambda item: {
-            "Kode KFA Kemasan": item.get("kfaCode") or item.get("kfa_code") or "",
-            "Nama Varian": item.get("variantDisplayName") or item.get("variant_display_name") or "",
-            "Nama Kemasan": item.get("packageName") or item.get("package_name") or "",
+            "Kode KFA Kemasan": item.get("kfaCode", ""),
+            "Nama Varian": item.get("variantDisplayName", ""),
+            "Nama Kemasan": item.get("packageName", ""),
             "Qty": item.get("qty", 0),
             "Harga (HET/KFA)": item.get("price", 0),
-            "Satuan (UOM)": item.get("uomName") or item.get("uom_name") or "",
+            "Satuan (UOM)": item.get("uomName", ""),
             "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or "")
         }
     },
@@ -63,9 +63,9 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
-            "Nama Zat Aktif": item.get("name") or "",
-            "Satuan Dosis (UCUM)": item.get("ucumSymbol") or item.get("ucum_symbol") or ""
+            "Kode KFA": item.get("kfaCode", ""),
+            "Nama Zat Aktif": item.get("name", ""),
+            "Satuan Dosis (UCUM)": item.get("ucumSymbol", "")
         }
     }
 }
@@ -81,12 +81,10 @@ def render_obat_page():
     
     config = CATEGORIES[selected_cat_name]
     
-    # Input Cookie Manual dari Browser
     user_cookie = st.text_input(
-        "🔑 Pass Cookie Browser (Wajib jika API memblokir request):", 
+        "🔑 Cookie Browser (Opsional):", 
         value="", 
-        type="password",
-        help="Buka F12 pada browser di website KFA Farmasi, salin nilai 'Cookie' dari Request Header lalu paste di sini."
+        type="password"
     )
     
     col1, col2, col3 = st.columns(3)
@@ -101,11 +99,9 @@ def render_obat_page():
     
     if st.button(f"🚀 Mulai Penarikan Data {selected_cat_name}", type="primary"):
         kw_clean = search_keyword.strip()
+        keywords_to_process = [kw_clean] if kw_clean else OBAT_SWEEP_PREFIXES
         
-        if kw_clean:
-            keywords_to_process = [kw_clean]
-        else:
-            keywords_to_process = OBAT_SWEEP_PREFIXES
+        if not kw_clean:
             st.toast("⚡ Menjalankan Auto-Sweep 105 Suku Kata KFA Obat...", icon="⚡")
 
         all_rows = []
@@ -116,7 +112,6 @@ def render_obat_page():
         target_url = f"{BASE_URL_OBAT}{config['endpoint']}"
         total_kw = len(keywords_to_process)
         
-        # Susun headers lengkap dengan Cookie jika disediakan
         request_headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -137,6 +132,7 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
+                # Payload Murni CamelCase Tanpa Lapisan Karakter Ilegal
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
@@ -152,17 +148,21 @@ def render_obat_page():
                 
                 try:
                     resp = requests.post(target_url, headers=request_headers, json=payload, timeout=30)
+                    
                     if resp.status_code == 200:
                         res_json = resp.json()
-                        raw_data = res_json.get("data") or res_json.get("items") or []
                         
-                        if isinstance(raw_data, dict):
-                            items = raw_data.get("items") or raw_data.get("data") or []
-                        elif isinstance(raw_data, list):
-                            items = raw_data
-                        else:
-                            items = []
-                        
+                        # Unwrapping berlapis untuk struktur JSON KFA Farmasi
+                        items = []
+                        if isinstance(res_json, dict):
+                            data_field = res_json.get("data")
+                            if isinstance(data_field, list):
+                                items = data_field
+                            elif isinstance(data_field, dict):
+                                items = data_field.get("items") or data_field.get("data") or []
+                            elif "items" in res_json:
+                                items = res_json.get("items") or []
+
                         if not items:
                             break
                             
@@ -192,17 +192,17 @@ def render_obat_page():
                             break
                         page += 1
                     else:
-                        status.error(f"❌ Server menolak request dengan status HTTP {resp.status_code}.")
+                        status.error(f"❌ HTTP Status {resp.status_code}: {resp.text[:200]}")
                         break
                 except Exception as e:
-                    status.error(f"❌ Error pada kata kunci '{kw}': {str(e)}")
+                    status.error(f"❌ Error Koneksi: {str(e)}")
                     break
                     
         if all_rows:
             status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{config['endpoint']}.txt")
         else:
-            status.error("❌ Tidak ada data yang berhasil diambil. Masukkan 'Cookie Browser' terbaru dari DevTools (F12) untuk mengotorisasi request.")
+            status.error("❌ Tidak ada data terambil. Coba jalankan ulang penarikan.")
 
 def _render_download(df, cols, filename):
     st.divider()
