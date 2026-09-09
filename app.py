@@ -11,9 +11,8 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian** (bukan cangkang/template) dari SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian** dari SATUSEHAT Kemenkes RI.")
 
-# Endpoint khusus Produk Varian
 URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
 
 headers = {
@@ -26,9 +25,28 @@ headers = {
 
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=200, value=50, step=10)
-max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian Varian (contoh: 'cath' atau 'syringe')", value="cath")
+
+# Diubah dari slider menjadi number_input manual
+batch_size = st.sidebar.number_input(
+    "Jumlah Data Per Request (Size)", 
+    min_value=1, 
+    max_value=1000, 
+    value=100, 
+    step=10,
+    help="Ketik jumlah item per halaman secara manual (Contoh: 50, 100, 200)."
+)
+
+max_pages = st.sidebar.number_input(
+    "Batas Maksimal Halaman (0 = Tanpa Batas)", 
+    min_value=0, 
+    value=0, 
+    step=1
+)
+
+search_keyword = st.sidebar.text_input(
+    "Kata Kunci Pencarian Varian (contoh: 'cath' atau 'syringe')", 
+    value="cath"
+)
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
@@ -63,7 +81,6 @@ if start_download:
     while True:
         status_text.info(f"⏳ Sedang mengambil data Produk Varian Halaman **{page}** ({batch_size} item per request)...")
         
-        # Payload khusus pencarian varian
         payload = {
             "page": int(page),
             "size": int(batch_size),
@@ -82,7 +99,6 @@ if start_download:
             if response.status_code == 200:
                 res_json = response.json()
                 
-                # Mendapatkan list items dari respons API varian
                 items = res_json.get('items') or res_json.get('data') or []
                 if isinstance(items, dict):
                     items = items.get('items') or items.get('data') or []
@@ -91,12 +107,9 @@ if start_download:
                     status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** data varian berhasil diambil.")
                     break
                     
-                # Parsing atribut khusus Produk Varian
                 for item in items:
-                    # Ambil informasi varian spesifik
                     kfa_code = item.get("kfa_code") or item.get("kfaCode") or item.get("code") or ""
                     
-                    # Nama varian lengkap (merek/kemasan)
                     variant_name = (
                         item.get("product_variant_name") 
                         or item.get("name") 
@@ -104,7 +117,6 @@ if start_download:
                         or ""
                     )
                     
-                    # NIE, Registrar (Pemilik NIE), dan Manufacturer (Pabrik)
                     nie_no = item.get("nie") or item.get("nie_number") or ""
                     
                     registrar_obj = item.get("registrar") or item.get("registrar_name") or ""
