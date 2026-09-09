@@ -136,23 +136,23 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
-                # Dual-naming Payload untuk melintasi validator snake_case & camelCase
+                # Payload dengan nilai None/null pada parameter filter agar terhindar dari Bad Request 400
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
                     "search": str(kw),
                     "search_by": "name",
                     "searchBy": "name",
-                    "kfa_code": "",
-                    "kfaCode": "",
-                    "farmalkes_type": "",
-                    "farmalkesType": "",
-                    "registrar": "",
-                    "manufacturer": "",
-                    "made_origin": "",
-                    "madeOrigin": "",
-                    "product_template_id": "",
-                    "productTemplateId": ""
+                    "kfa_code": None,
+                    "kfaCode": None,
+                    "farmalkes_type": None,
+                    "farmalkesType": None,
+                    "registrar": None,
+                    "manufacturer": None,
+                    "made_origin": None,
+                    "madeOrigin": None,
+                    "product_template_id": None,
+                    "productTemplateId": None
                 }
                 
                 try:
