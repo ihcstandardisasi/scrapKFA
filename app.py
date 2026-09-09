@@ -13,6 +13,19 @@ st.set_page_config(
 st.title("🏥 SATUSEHAT KFA Alkes Data Extractor")
 st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI, memilih kolom secara kustom, dan mengekspor hasilnya ke format **TXT (pipe-separated `|`)**.")
 
+# Kamus Pemetaan Nama Kolom API -> Nama Kolom Tampilan Web
+COLUMN_MAPPING = {
+    "kfa_code": "Kode KFA (PA)",
+    "name": "Nama produk varian",
+    "nie": "Nomor ijin edar",
+    "registrar": "Pemilik NIE",
+    "manufacturer": "Pabrik",
+    "bmhp": "BMHP",
+    "made_origin": "Asal Produk",
+    "net_content": "Jumlah Kemasan",
+    "state": "Status"
+}
+
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
 batch_size = st.sidebar.number_input("Jumlah Data Per Request (Size)", min_value=10, max_value=5000, value=1000, step=100)
@@ -49,23 +62,35 @@ def get_sample_schema():
             items = res_json.get('items') or res_json.get('data') or []
             if items:
                 df_sample = pd.DataFrame(items)
+                # Rename kolom sesuai mapping
+                df_sample.rename(columns=COLUMN_MAPPING, inplace=True)
                 return list(df_sample.columns)
     except Exception:
         pass
-    return []
+    
+    # Fallback jika fetch awal gagal
+    return list(COLUMN_MAPPING.values())
 
 sample_columns = get_sample_schema()
 
+# Set default kolom sesuai urutan di gambar
+DEFAULT_COLUMNS = [
+    "Kode KFA (PA)",
+    "Nama produk varian",
+    "Nomor ijin edar",
+    "Pemilik NIE",
+    "Pabrik"
+]
+
+# Pastikan default hanya kolom yang ada di API
+valid_defaults = [c for c in DEFAULT_COLUMNS if c in sample_columns] or sample_columns
+
 st.subheader("📌 Pilih Kolom yang Ingin Diunduh")
-if sample_columns:
-    selected_columns = st.multiselect(
-        "Silakan pilih atau hapus kolom yang dibutuhkan:",
-        options=sample_columns,
-        default=sample_columns
-    )
-else:
-    st.warning("⚠️ Gagal memuat struktur kolom awal dari API. Semua kolom bawaan akan otomatis digunakan saat ekstraksi.")
-    selected_columns = []
+selected_columns = st.multiselect(
+    "Silakan pilih atau sesuaikan kolom yang dibutuhkan:",
+    options=sample_columns,
+    default=valid_defaults
+)
 
 st.divider()
 
@@ -109,6 +134,8 @@ if start_download:
                 
                 # Preview tabel
                 df_current = pd.DataFrame(all_data)
+                df_current.rename(columns=COLUMN_MAPPING, inplace=True)
+                
                 if selected_columns:
                     cols_to_show = [c for c in selected_columns if c in df_current.columns]
                     if cols_to_show:
@@ -142,7 +169,10 @@ if st.session_state["all_fetched_data"]:
     
     df_final = pd.DataFrame(st.session_state["all_fetched_data"])
     
-    # Filter kolom sesuai pilihan pengguna
+    # Ubah nama kolom sesuai bahasa Indonesia
+    df_final.rename(columns=COLUMN_MAPPING, inplace=True)
+    
+    # Filter & urutkan kolom sesuai pilihan pengguna
     if selected_columns:
         valid_cols = [c for c in selected_columns if c in df_final.columns]
         if valid_cols:
