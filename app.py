@@ -11,10 +11,11 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** secara lengkap dari SATUSEHAT Kemenkes RI.")
 
-# Menggunakan endpoint template yang stabil
-URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/search-template"
+# Endpoint Utama
+URL_SEARCH = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/search-template"
+URL_DETAIL = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/get-template-by-id"
 
 headers = {
     "Accept": "application/json, text/plain, */*",
@@ -24,165 +25,140 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Pemetaan komprehensif ke Bahasa Indonesia
-COLUMN_MAPPING = {
-    "kfa_code": "Kode KFA (PA)",
-    "kfaCode": "Kode KFA (PA)",
-    "name": "Nama produk varian",
-    "product_variant_name": "Nama produk varian",
-    "productVariantName": "Nama produk varian",
-    "product_template_name": "Nama Template Produk",
-    "nie": "Nomor ijin edar",
-    "registrar": "Pemilik NIE",
-    "registrar_name": "Pemilik NIE",
-    "registrar.name": "Pemilik NIE",
-    "manufacturer": "Pabrik",
-    "manufacturer_name": "Pabrik",
-    "manufacturer.name": "Pabrik",
-    "made_origin": "Asal Produk",
-    "madeOrigin": "Asal Produk",
-    "bmhp": "BMHP"
-}
-
-def build_payload(keyword, page, size):
-    return {
-        "page": int(page),
-        "size": int(size),
-        "search": keyword.strip() if keyword else "",
-        "kfa_code": "",
-        "bmhp": "",
-        "made_origin": "",
-        "manufacturer": "",
-        "registrar": ""
-    }
-
-# Fungsi mengekstrak dan membongkar varian dari respons template
-def extract_variants_from_templates(template_items):
-    extracted = []
-    if not template_items:
-        return extracted
-        
-    for item in template_items:
-        # Jika item langsung berupa varian
-        if "nie" in item or "product_variant_name" in item:
-            extracted.append(item)
-        # Jika varian terbungkus di dalam array 'variants' atau 'product_variants'
-        elif "variants" in item and isinstance(item["variants"], list):
-            for var in item["variants"]:
-                extracted.append(var)
-        elif "product_variants" in item and isinstance(item["product_variants"], list):
-            for var in item["product_variants"]:
-                extracted.append(var)
-        else:
-            # Fallback menggunakan data template utama
-            extracted.append(item)
-            
-    return extracted
-
-def parse_items_to_df(items):
-    if not items:
-        return pd.DataFrame()
-    df = pd.json_normalize(items)
-    
-    renamed_cols = {}
-    for col in df.columns:
-        for key, val in COLUMN_MAPPING.items():
-            if col == key or col.endswith('.' + key):
-                renamed_cols[col] = val
-                break
-    df.rename(columns=renamed_cols, inplace=True)
-    return df
-
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=200, value=100, step=10)
+batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=50, step=10)
 max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Ketikan 'cath' atau kosongkan untuk semua data)", value="cath")
+search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Ketikan 'cath' atau kosongkan)", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
 
-@st.cache_data(ttl=3600)
-def get_variant_schema(sample_query):
-    payload = build_payload(sample_query, 1, 5)
+# Fungsi untuk mengambil detail varian berdasarkan ID Template
+def fetch_template_detail(template_id):
     try:
-        resp = requests.post(URL_TEMPLATE, headers=headers, json=payload, timeout=10)
+        url = f"{URL_DETAIL}?id={template_id}"
+        resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
-            res_json = resp.json()
-            raw_items = res_json.get('items') or res_json.get('data') or []
-            variant_items = extract_variants_from_templates(raw_items)
-            if variant_items:
-                df_sample = parse_items_to_df(variant_items)
-                return list(df_sample.columns)
+            return resp.json()
     except Exception:
         pass
-    
-    return [
-        "Kode KFA (PA)",
-        "Nama produk varian",
-        "Nomor ijin edar",
-        "Pemilik NIE",
-        "Pabrik"
-    ]
+    return None
 
-sample_columns = get_variant_schema(search_keyword)
+# Fungsi parsing respons menjadi baris-baris varian lengkap
+def parse_details_to_rows(details_list):
+    rows = []
+    for item in details_list:
+        if not item:
+            continue
+            
+        kfa_code = item.get("kfa_code") or item.get("kfaCode") or ""
+        template_name = item.get("name") or item.get("product_template_name") or ""
+        
+        variants = item.get("product_variants") or item.get("variants") or []
+        
+        if variants:
+            for v in variants:
+                row = {
+                    "Kode KFA (PA)": kfa_code,
+                    "Nama produk varian": v.get("name") or v.get("product_variant_name") or template_name,
+                    "Nomor ijin edar": v.get("nie") or item.get("nie") or "",
+                    "Pemilik NIE": v.get("registrar") or v.get("registrar_name") or item.get("registrar") or "",
+                    "Pabrik": v.get("manufacturer") or v.get("manufacturer_name") or item.get("manufacturer") or "",
+                    "BMHP": v.get("bmhp") or item.get("bmhp") or "",
+                    "Asal Produk": v.get("made_origin") or item.get("made_origin") or ""
+                }
+                rows.append(row)
+        else:
+            # Fallback jika tidak ada turunan array varian
+            row = {
+                "Kode KFA (PA)": kfa_code,
+                "Nama produk varian": template_name,
+                "Nomor ijin edar": item.get("nie") or "",
+                "Pemilik NIE": item.get("registrar") or "",
+                "Pabrik": item.get("manufacturer") or "",
+                "BMHP": item.get("bmhp") or "",
+                "Asal Produk": item.get("made_origin") or ""
+            }
+            rows.append(row)
+            
+    return rows
 
-PREFERRED_ORDER = [
+ALL_POSSIBLE_COLUMNS = [
     "Kode KFA (PA)",
     "Nama produk varian",
     "Nomor ijin edar",
     "Pemilik NIE",
-    "Pabrik"
+    "Pabrik",
+    "BMHP",
+    "Asal Produk"
 ]
-
-default_selected = [c for c in PREFERRED_ORDER if c in sample_columns] or sample_columns
 
 st.subheader("📌 Pilih Kolom yang Ingin Diunduh")
 selected_columns = st.multiselect(
     "Silakan pilih atau sesuaikan kolom yang dibutuhkan:",
-    options=sample_columns,
-    default=default_selected
+    options=ALL_POSSIBLE_COLUMNS,
+    default=ALL_POSSIBLE_COLUMNS[:5]
 )
 
 st.divider()
 
-start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="primary")
+start_download = st.button("🚀 Mulai Penarikan Data Produk Varian Lengkap", type="primary")
 
 if start_download:
-    all_raw_variants = []
+    all_rows = []
     page = 1
     
     status_text = st.empty()
     table_placeholder = st.empty()
 
     while True:
-        status_text.info(f"⏳ Sedang mengambil data Halaman **{page}** ({batch_size} item per request)...")
+        status_text.info(f"⏳ Sedang mengambil daftar ID Halaman **{page}** ({batch_size} item per request)...")
         
-        payload = build_payload(search_keyword, page, batch_size)
+        payload = {
+            "page": int(page),
+            "size": int(batch_size),
+            "search": search_keyword.strip() if search_keyword else "",
+            "kfa_code": "",
+            "bmhp": "",
+            "made_origin": "",
+            "manufacturer": "",
+            "registrar": ""
+        }
         
         try:
-            response = requests.post(URL_TEMPLATE, headers=headers, json=payload, timeout=30)
+            response = requests.post(URL_SEARCH, headers=headers, json=payload, timeout=30)
             
             if response.status_code == 200:
                 res_json = response.json()
-                
-                raw_items = []
-                if isinstance(res_json, dict):
-                    raw_items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
-                elif isinstance(res_json, list):
-                    raw_items = res_json
+                raw_items = res_json.get('items') or res_json.get('data') or []
                 
                 if not raw_items:
-                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_raw_variants)}** data berhasil diambil.")
+                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** baris varian berhasil diambil.")
                     break
                     
-                # Extrak varian dari tiap template
-                variant_items = extract_variants_from_templates(raw_items)
-                all_raw_variants.extend(variant_items)
+                # Tahap 2: Fetch detail untuk setiap ID
+                fetched_details = []
+                for idx, item in enumerate(raw_items):
+                    item_id = item.get("id") or item.get("product_template_id")
+                    status_text.info(f"⏳ Halaman **{page}** | Mengambil detail varian {idx+1}/{len(raw_items)}...")
+                    
+                    if item_id:
+                        detail_data = fetch_template_detail(item_id)
+                        if detail_data:
+                            fetched_details.append(detail_data)
+                        else:
+                            fetched_details.append(item)
+                    else:
+                        fetched_details.append(item)
                 
-                status_text.info(f"🔄 Halaman {page}: Berhasil mengekstrak **{len(variant_items)}** varian (Total Sementara: **{len(all_raw_variants)}** data)")
+                # Parsing detail menjadi baris lengkap
+                page_rows = parse_details_to_rows(fetched_details)
+                all_rows.extend(page_rows)
                 
-                df_current = parse_items_to_df(all_raw_variants)
+                status_text.info(f"🔄 Halaman {page}: Berhasil mengekstrak **{len(page_rows)}** varian lengkap (Total: **{len(all_rows)}** data)")
+                
+                df_current = pd.DataFrame(all_rows)
                 if selected_columns:
                     cols_to_show = [c for c in selected_columns if c in df_current.columns]
                     if cols_to_show:
@@ -190,11 +166,11 @@ if start_download:
                 table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
                 
                 if len(raw_items) < batch_size:
-                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_raw_variants)}** data berhasil diambil.")
+                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_rows)}** baris varian berhasil diambil.")
                     break
                     
                 if max_pages > 0 and page >= max_pages:
-                    status_text.warning(f"⚠️ Penarikan dihentikan karena mencapai batas halaman ({max_pages}). Total: **{len(all_raw_variants)}** data.")
+                    status_text.warning(f"⚠️ Penarikan dihentikan karena mencapai batas halaman ({max_pages}). Total: **{len(all_rows)}** data.")
                     break
                     
                 page += 1
@@ -206,14 +182,14 @@ if start_download:
             status_text.error(f"❌ Terjadi kesalahan koneksi: {str(e)}")
             break
 
-    if all_raw_variants:
-        st.session_state["all_fetched_data"] = all_raw_variants
+    if all_rows:
+        st.session_state["all_fetched_data"] = all_rows
 
 if st.session_state["all_fetched_data"]:
     st.divider()
     st.subheader("📥 Download Hasil Data")
     
-    df_final = parse_items_to_df(st.session_state["all_fetched_data"])
+    df_final = pd.DataFrame(st.session_state["all_fetched_data"])
     
     if selected_columns:
         valid_cols = [c for c in selected_columns if c in df_final.columns]
