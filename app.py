@@ -11,9 +11,8 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** langsung dari endpoint varian SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
 
-# Endpoint khusus Produk Varian (Bukan Template)
 URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
 
 headers = {
@@ -21,18 +20,40 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# Pemetaan Field API Varian ke Nama Kolom Bahasa Indonesia
+# Pemetaan komprehensif nama atribut nested ke bahasa Indonesia
 COLUMN_MAPPING = {
-    "kfaCode": "Kode KFA (PA)",
     "kfa_code": "Kode KFA (PA)",
-    "productVariantName": "Nama produk varian",
+    "kfaCode": "Kode KFA (PA)",
     "name": "Nama produk varian",
+    "product_variant_name": "Nama produk varian",
     "nie": "Nomor ijin edar",
     "registrar": "Pemilik NIE",
+    "registrar_name": "Pemilik NIE",
+    "registrar.name": "Pemilik NIE",
     "manufacturer": "Pabrik",
-    "madeOrigin": "Asal Produk",
+    "manufacturer_name": "Pabrik",
+    "manufacturer.name": "Pabrik",
+    "made_origin": "Asal Produk",
     "bmhp": "BMHP"
 }
+
+# Fungsi normalisasi JSON nested
+def parse_items_to_df(items):
+    if not items:
+        return pd.DataFrame()
+    # Meratakan struktur JSON nested
+    df = pd.json_normalize(items)
+    
+    # Menyesuaikan nama kolom sesuai mapping yang cocok
+    renamed_cols = {}
+    for col in df.columns:
+        # Cek jika ada kecocokan di dictionary mapping
+        for key, val in COLUMN_MAPPING.items():
+            if col == key or col.endswith('.' + key):
+                renamed_cols[col] = val
+                break
+    df.rename(columns=renamed_cols, inplace=True)
+    return df
 
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
@@ -43,7 +64,7 @@ search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong unt
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
 
-# Step 1: Ambil Sampel Schema dari Endpoint Varian
+# Step 1: Pre-fetch schema
 @st.cache_data(ttl=3600)
 def get_variant_schema():
     payload = {
@@ -62,13 +83,11 @@ def get_variant_schema():
             res_json = resp.json()
             items = res_json.get('items') or res_json.get('data') or []
             if items:
-                df_sample = pd.DataFrame(items)
-                df_sample.rename(columns=COLUMN_MAPPING, inplace=True)
+                df_sample = parse_items_to_df(items)
                 return list(df_sample.columns)
     except Exception:
         pass
     
-    # Default jika gagal pre-fetch
     return [
         "Kode KFA (PA)",
         "Nama produk varian",
@@ -79,7 +98,6 @@ def get_variant_schema():
 
 sample_columns = get_variant_schema()
 
-# Urutan ideal kolom utama
 PREFERRED_ORDER = [
     "Kode KFA (PA)",
     "Nama produk varian",
@@ -137,10 +155,8 @@ if start_download:
                 all_data.extend(items)
                 status_text.info(f"🔄 Berhasil mengambil **{len(items)}** varian dari Halaman {page} (Total Sementara: **{len(all_data)}** data)")
                 
-                # Preview tabel
-                df_current = pd.DataFrame(all_data)
-                df_current.rename(columns=COLUMN_MAPPING, inplace=True)
-                
+                # Render preview
+                df_current = parse_items_to_df(all_data)
                 if selected_columns:
                     cols_to_show = [c for c in selected_columns if c in df_current.columns]
                     if cols_to_show:
@@ -167,20 +183,18 @@ if start_download:
     if all_data:
         st.session_state["all_fetched_data"] = all_data
 
-# Tampilkan Opsi Download jika Data Berhasil Ditarik
+# Ekspor Data
 if st.session_state["all_fetched_data"]:
     st.divider()
     st.subheader("📥 Download Hasil Data")
     
-    df_final = pd.DataFrame(st.session_state["all_fetched_data"])
-    df_final.rename(columns=COLUMN_MAPPING, inplace=True)
+    df_final = parse_items_to_df(st.session_state["all_fetched_data"])
     
     if selected_columns:
         valid_cols = [c for c in selected_columns if c in df_final.columns]
         if valid_cols:
             df_final = df_final[valid_cols]
             
-    # Export ke TXT dengan Pipe Separator (|)
     buffer = io.StringIO()
     df_final.to_csv(buffer, sep="|", index=False, encoding="utf-8")
     txt_bytes = buffer.getvalue().encode("utf-8")
