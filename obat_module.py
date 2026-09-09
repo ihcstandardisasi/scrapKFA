@@ -6,12 +6,17 @@ import string
 
 BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/detail/"
 
+# Header browser lengkap untuk lolos dari proteksi API Gateway Kemenkes
 headers = {
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Origin": "https://satusehat.kemkes.go.id",
-    "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
+    "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin"
 }
 
 # 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
@@ -95,7 +100,7 @@ def render_obat_page():
     with col2:
         max_pages = st.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 105 Suku Kata)", value="", key="obat_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 105 Suku Kata 'xx9')", value="", key="obat_keyword")
         
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
@@ -106,7 +111,7 @@ def render_obat_page():
             keywords_to_process = [kw_clean]
         else:
             keywords_to_process = OBAT_SWEEP_PREFIXES
-            st.toast("⚡ Menjalankan Auto-Sweep presisi (105 Kombinasi)...", icon="⚡")
+            st.toast("⚡ Menjalankan Auto-Sweep presisi Obat (105 Kombinasi 'xx9')...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
@@ -121,7 +126,6 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
-                # Payload camelCase lengkap sesuai syarat backend Obat Kemenkes
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
@@ -151,7 +155,6 @@ def render_obat_page():
                             parsed_item = config["parser"](item)
                             unique_key = parsed_item.get(config["key_id"]) or str(parsed_item)
                             
-                            # Deduplikasi
                             if unique_key and unique_key in seen_ids:
                                 continue
                             if unique_key:
@@ -160,7 +163,6 @@ def render_obat_page():
                             all_rows.append(parsed_item)
                             recent_added.append(parsed_item)
                             
-                        # Render preview 10 data terbaru agar RAM tetap ringan
                         if recent_added:
                             df_preview = pd.DataFrame(recent_added)
                             valid_c = [c for c in selected_cols if c in df_preview.columns]
