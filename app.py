@@ -11,21 +11,25 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** langsung dari Kemenkes RI.")
 
 URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
 
 headers = {
+    "Accept": "application/json, text/plain, */*",
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Origin": "https://satusehat.kemkes.go.id",
+    "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Pemetaan komprehensif nama atribut nested ke bahasa Indonesia
+# Pemetaan komprehensif nama atribut ke Bahasa Indonesia
 COLUMN_MAPPING = {
     "kfa_code": "Kode KFA (PA)",
     "kfaCode": "Kode KFA (PA)",
     "name": "Nama produk varian",
     "product_variant_name": "Nama produk varian",
+    "productVariantName": "Nama produk varian",
     "nie": "Nomor ijin edar",
     "registrar": "Pemilik NIE",
     "registrar_name": "Pemilik NIE",
@@ -34,20 +38,18 @@ COLUMN_MAPPING = {
     "manufacturer_name": "Pabrik",
     "manufacturer.name": "Pabrik",
     "made_origin": "Asal Produk",
+    "madeOrigin": "Asal Produk",
     "bmhp": "BMHP"
 }
 
-# Fungsi normalisasi JSON nested
+# Fungsi pembongkar JSON nested menjadi dataframe datar
 def parse_items_to_df(items):
     if not items:
         return pd.DataFrame()
-    # Meratakan struktur JSON nested
     df = pd.json_normalize(items)
     
-    # Menyesuaikan nama kolom sesuai mapping yang cocok
     renamed_cols = {}
     for col in df.columns:
-        # Cek jika ada kecocokan di dictionary mapping
         for key, val in COLUMN_MAPPING.items():
             if col == key or col.endswith('.' + key):
                 renamed_cols[col] = val
@@ -55,9 +57,23 @@ def parse_items_to_df(items):
     df.rename(columns=renamed_cols, inplace=True)
     return df
 
+# Fungsi membuat payload minimalis agar diterima server
+def build_payload(keyword, page, size):
+    payload = {
+        "page": int(page),
+        "size": int(size)
+    }
+    # Hanya kirimkan keyword jika terisi
+    if keyword and keyword.strip():
+        payload["search"] = keyword.strip()
+    else:
+        payload["search"] = ""
+        
+    return payload
+
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.number_input("Jumlah Data Per Request (Size)", min_value=10, max_value=5000, value=1000, step=100)
+batch_size = st.sidebar.number_input("Jumlah Data Per Request (Size)", min_value=10, max_value=2000, value=500, step=100)
 max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
 search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong untuk semua data)", value="")
 
@@ -67,21 +83,20 @@ if "all_fetched_data" not in st.session_state:
 # Step 1: Pre-fetch schema
 @st.cache_data(ttl=3600)
 def get_variant_schema():
-    payload = {
-        "search": "",
-        "size": 5,
-        "page": 1,
-        "kfa_code": "",
-        "bmhp": "",
-        "made_origin": "",
-        "manufacturer": "",
-        "registrar": ""
-    }
+    payload = build_payload("", 1, 5)
     try:
         resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=10)
         if resp.status_code == 200:
             res_json = resp.json()
-            items = res_json.get('items') or res_json.get('data') or []
+            # Ekstrak dari berbagai kemungkinan key respons API
+            items = []
+            if isinstance(res_json, dict):
+                items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
+                if isinstance(items, dict):
+                    items = items.get('items') or items.get('data') or []
+            elif isinstance(res_json, list):
+                items = res_json
+
             if items:
                 df_sample = parse_items_to_df(items)
                 return list(df_sample.columns)
@@ -130,26 +145,28 @@ if start_download:
     while True:
         status_text.info(f"⏳ Sedang mengambil data Produk Varian Halaman **{page}** ({batch_size} item per request)...")
         
-        payload = {
-            "search": search_keyword,
-            "size": batch_size,
-            "page": page,
-            "kfa_code": "",
-            "bmhp": "",
-            "made_origin": "",
-            "manufacturer": "",
-            "registrar": ""
-        }
+        payload = build_payload(search_keyword, page, batch_size)
         
         try:
             response = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
             
             if response.status_code == 200:
                 res_json = response.json()
-                items = res_json.get('items') or res_json.get('data') or []
+                
+                # Ekstrak items secara fleksibel
+                items = []
+                if isinstance(res_json, dict):
+                    items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
+                    if isinstance(items, dict):
+                        items = items.get('items') or items.get('data') or []
+                elif isinstance(res_json, list):
+                    items = res_json
                 
                 if not items:
-                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_data)}** data varian berhasil diambil.")
+                    if page == 1:
+                        status_text.warning("⚠️ Tidak ada data yang ditemukan. Coba periksa kembali kata kunci pencarian atau turunkan ukuran Size di sidebar.")
+                    else:
+                        status_text.success(f"✅ Penarikan data selesai! Total **{len(all_data)}** data varian berhasil diambil.")
                     break
                     
                 all_data.extend(items)
