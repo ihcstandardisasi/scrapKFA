@@ -4,22 +4,9 @@ import pandas as pd
 import io
 import string
 
-BASE_URL_FARMASI = "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
 BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/detail/"
 
-headers = {
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Origin": "https://satusehat.kemkes.go.id",
-    "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin"
-}
-
-# 105 Kombinasi Suku Kata Konsonan + Vokal + '9'
+# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
 OBAT_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
@@ -94,6 +81,14 @@ def render_obat_page():
     
     config = CATEGORIES[selected_cat_name]
     
+    # Input Cookie Manual dari Browser
+    user_cookie = st.text_input(
+        "🔑 Pass Cookie Browser (Wajib jika API memblokir request):", 
+        value="", 
+        type="password",
+        help="Buka F12 pada browser di website KFA Farmasi, salin nilai 'Cookie' dari Request Header lalu paste di sini."
+    )
+    
     col1, col2, col3 = st.columns(3)
     with col1:
         batch_size = st.number_input("Jumlah Data Per Request (Size)", min_value=1, max_value=1000, value=100, step=10, key="obat_size")
@@ -121,15 +116,21 @@ def render_obat_page():
         target_url = f"{BASE_URL_OBAT}{config['endpoint']}"
         total_kw = len(keywords_to_process)
         
-        # Inisialisasi HTTP Session untuk mendapatkan cookie portal secara otomatis
-        session = requests.Session()
-        session.headers.update(headers)
+        # Susun headers lengkap dengan Cookie jika disediakan
+        request_headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Origin": "https://satusehat.kemkes.go.id",
+            "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin"
+        }
         
-        try:
-            status.info("⏳ Memulai Sesi Portal KFA Farmasi...")
-            session.get(BASE_URL_FARMASI, timeout=15)
-        except Exception as e:
-            st.warning(f"⚠️ Peringatan Sesi Awal: {str(e)}")
+        if user_cookie.strip():
+            request_headers["Cookie"] = user_cookie.strip()
 
         for idx, kw in enumerate(keywords_to_process, start=1):
             page = 1
@@ -150,7 +151,7 @@ def render_obat_page():
                 }
                 
                 try:
-                    resp = session.post(target_url, json=payload, timeout=30)
+                    resp = requests.post(target_url, headers=request_headers, json=payload, timeout=30)
                     if resp.status_code == 200:
                         res_json = resp.json()
                         raw_data = res_json.get("data") or res_json.get("items") or []
@@ -191,6 +192,7 @@ def render_obat_page():
                             break
                         page += 1
                     else:
+                        status.error(f"❌ Server menolak request dengan status HTTP {resp.status_code}.")
                         break
                 except Exception as e:
                     status.error(f"❌ Error pada kata kunci '{kw}': {str(e)}")
@@ -200,7 +202,7 @@ def render_obat_page():
             status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{config['endpoint']}.txt")
         else:
-            status.error("❌ Tidak ada data yang berhasil diambil. Periksa kembali jaringan atau kata kunci.")
+            status.error("❌ Tidak ada data yang berhasil diambil. Masukkan 'Cookie Browser' terbaru dari DevTools (F12) untuk mengotorisasi request.")
 
 def _render_download(df, cols, filename):
     st.divider()
