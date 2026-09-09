@@ -81,15 +81,20 @@ def render_obat_page():
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        batch_size = st.number_input("Jumlah Data Per Request (Size)", min_value=1, max_value=1000, value=100, step=10, key="obat_size")
+        batch_size = st.number_input("Jumlah Data Per Request (Max 100)", min_value=1, max_value=100, value=10, step=10, key="obat_size")
     with col2:
         max_pages = st.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (contoh: 'paracetamol', 'amox', 'ibu')", value="paracetamol", key="obat_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian (contoh: 'paracetamol')", value="paracetamol", key="obat_keyword")
         
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
     if st.button(f"🚀 Mulai Penarikan Data {selected_cat_name}", type="primary"):
+        active_search = search_keyword.strip()
+        if not active_search:
+            active_search = "paracetamol"
+            st.info("ℹ️ Kata kunci kosong, menggunakan default kata kunci: **'paracetamol'**.")
+
         all_rows = []
         page = 1
         status = st.empty()
@@ -97,16 +102,14 @@ def render_obat_page():
         
         target_url = f"{BASE_URL_OBAT}{config['endpoint']}"
         
-        # Jika input kosong, gunakan default fallback kata kunci 3 karakter
-        active_search = search_keyword.strip() if search_keyword.strip() else "par"
-        
         while True:
             status.info(f"⏳ Mengambil Data dengan Kata Kunci: **'{active_search}'** | Halaman **{page}** ({batch_size} item/request)...")
             
+            # Payload disesuaikan dengan contoh persis dari browser DevTools
             payload = {
                 "page": int(page),
                 "size": int(batch_size),
-                "search": active_search,
+                "search": str(active_search),
                 "search_by": "name",
                 "farmalkes_type": ""
             }
@@ -115,7 +118,11 @@ def render_obat_page():
                 resp = requests.post(target_url, headers=headers, json=payload, timeout=30)
                 if resp.status_code == 200:
                     res_json = resp.json()
+                    
+                    # Parsing item dari key 'data'
                     items = res_json.get("data", [])
+                    if isinstance(items, dict):
+                        items = items.get("data", [])
                     
                     if not items:
                         status.success(f"✅ Penarikan Selesai! Total **{len(all_rows)}** data terambil.")
@@ -135,7 +142,13 @@ def render_obat_page():
                         break
                     page += 1
                 else:
-                    status.error(f"❌ HTTP Error {resp.status_code} pada halaman {page}.")
+                    # Jika gagal, tampilkan detail pesan error dari server jika ada
+                    error_msg = ""
+                    try:
+                        error_msg = resp.json().get("message") or resp.text
+                    except:
+                        error_msg = resp.text
+                    status.error(f"❌ HTTP Error {resp.status_code} pada halaman {page}. Detail Server: {error_msg}")
                     break
             except Exception as e:
                 status.error(f"❌ Error Koneksi: {str(e)}")
