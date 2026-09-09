@@ -11,9 +11,10 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian** (bukan cangkang/template) dari SATUSEHAT Kemenkes RI.")
 
-URL_SEARCH = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/search-template"
+# Endpoint khusus Produk Varian
+URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
 
 headers = {
     "Accept": "application/json, text/plain, */*",
@@ -23,22 +24,11 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Pemetaan resmi kunci JSON API Kemenkes ke Label Bahasa Indonesia
-COLUMN_MAPPING = {
-    "kfaCode": "Kode KFA (PA)",
-    "productTemplateName": "Nama produk varian",
-    "nie": "Nomor ijin edar",
-    "registrar": "Pemilik NIE",
-    "manufacturer": "Pabrik",
-    "madeOrigins": "Asal Produk",
-    "productVariantCount": "Jumlah Varian"
-}
-
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=500, value=100, step=10)
+batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=200, value=50, step=10)
 max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong atau isi misal 'cath')", value="cath")
+search_keyword = st.sidebar.text_input("Kata Kunci Pencarian Varian (contoh: 'cath' atau 'syringe')", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
@@ -49,8 +39,7 @@ ALL_POSSIBLE_COLUMNS = [
     "Nomor ijin edar",
     "Pemilik NIE",
     "Pabrik",
-    "Asal Produk",
-    "Jumlah Varian"
+    "Asal Produk"
 ]
 
 st.subheader("📌 Pilih Kolom yang Ingin Diunduh")
@@ -72,44 +61,77 @@ if start_download:
     table_placeholder = st.empty()
 
     while True:
-        status_text.info(f"⏳ Sedang mengambil data Halaman **{page}** ({batch_size} item per request)...")
+        status_text.info(f"⏳ Sedang mengambil data Produk Varian Halaman **{page}** ({batch_size} item per request)...")
         
+        # Payload khusus pencarian varian
         payload = {
             "page": int(page),
             "size": int(batch_size),
-            "search": search_keyword.strip() if search_keyword else "",
+            "search": search_keyword.strip() if search_keyword else "cath",
             "kfa_code": "",
             "bmhp": "",
             "made_origin": "",
             "manufacturer": "",
-            "registrar": ""
+            "registrar": "",
+            "product_template_id": ""
         }
         
         try:
-            response = requests.post(URL_SEARCH, headers=headers, json=payload, timeout=30)
+            response = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
             
             if response.status_code == 200:
                 res_json = response.json()
+                
+                # Mendapatkan list items dari respons API varian
                 items = res_json.get('items') or res_json.get('data') or []
+                if isinstance(items, dict):
+                    items = items.get('items') or items.get('data') or []
                 
                 if not items:
-                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** data berhasil diambil.")
+                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** data varian berhasil diambil.")
                     break
                     
-                # Parsing dan pemetaan langsung
+                # Parsing atribut khusus Produk Varian
                 for item in items:
+                    # Ambil informasi varian spesifik
+                    kfa_code = item.get("kfa_code") or item.get("kfaCode") or item.get("code") or ""
+                    
+                    # Nama varian lengkap (merek/kemasan)
+                    variant_name = (
+                        item.get("product_variant_name") 
+                        or item.get("name") 
+                        or item.get("productVariantName") 
+                        or ""
+                    )
+                    
+                    # NIE, Registrar (Pemilik NIE), dan Manufacturer (Pabrik)
+                    nie_no = item.get("nie") or item.get("nie_number") or ""
+                    
+                    registrar_obj = item.get("registrar") or item.get("registrar_name") or ""
+                    if isinstance(registrar_obj, dict):
+                        registrar_name = registrar_obj.get("name") or str(registrar_obj)
+                    else:
+                        registrar_name = str(registrar_obj)
+                        
+                    manufacturer_obj = item.get("manufacturer") or item.get("manufacturer_name") or ""
+                    if isinstance(manufacturer_obj, dict):
+                        manufacturer_name = manufacturer_obj.get("name") or str(manufacturer_obj)
+                    else:
+                        manufacturer_name = str(manufacturer_obj)
+                        
+                    origin = item.get("made_origin") or item.get("madeOrigins") or ""
+
                     row = {
-                        "Kode KFA (PA)": item.get("kfaCode", ""),
-                        "Nama produk varian": item.get("productTemplateName", ""),
-                        "Nomor ijin edar": item.get("nie", ""),
-                        "Pemilik NIE": item.get("registrar", ""),
-                        "Pabrik": item.get("manufacturer", ""),
-                        "Asal Produk": item.get("madeOrigins", ""),
-                        "Jumlah Varian": item.get("productVariantCount", "")
+                        "Kode KFA (PA)": kfa_code,
+                        "Nama produk varian": variant_name,
+                        "Nomor ijin edar": nie_no,
+                        "Pemilik NIE": registrar_name,
+                        "Pabrik": manufacturer_name,
+                        "Asal Produk": origin
                     }
                     all_rows.append(row)
                 
-                status_text.info(f"🔄 Halaman {page}: Berhasil mengambil **{len(items)}** data (Total Sementara: **{len(all_rows)}** data)")
+                status_text.info(f"🔄 Halaman {page}: Berhasil mengambil **{len(items)}** data varian (Total Sementara: **{len(all_rows)}** data)")
                 
                 df_current = pd.DataFrame(all_rows)
                 if selected_columns:
@@ -119,7 +141,7 @@ if start_download:
                 table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
                 
                 if len(items) < batch_size:
-                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_rows)}** data berhasil diambil.")
+                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_rows)}** data varian berhasil diambil.")
                     break
                     
                 if max_pages > 0 and page >= max_pages:
@@ -163,7 +185,7 @@ if st.session_state["all_fetched_data"]:
             type="primary"
         )
     with col_dl2:
-        st.metric(label="Total Baris Data", value=f"{len(df_final):,}")
+        st.metric(label="Total Baris Data Varian", value=f"{len(df_final):,}")
         st.metric(label="Total Kolom Terpilih", value=f"{len(df_final.columns)}")
         
     st.subheader("👀 Preview Data Akhir (10 Baris Pertama)")
