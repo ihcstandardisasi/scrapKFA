@@ -23,7 +23,6 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Pemetaan komprehensif nama atribut ke Bahasa Indonesia
 COLUMN_MAPPING = {
     "kfa_code": "Kode KFA (PA)",
     "kfaCode": "Kode KFA (PA)",
@@ -42,7 +41,6 @@ COLUMN_MAPPING = {
     "bmhp": "BMHP"
 }
 
-# Fungsi pembongkar JSON nested menjadi dataframe datar
 def parse_items_to_df(items):
     if not items:
         return pd.DataFrame()
@@ -57,30 +55,29 @@ def parse_items_to_df(items):
     df.rename(columns=renamed_cols, inplace=True)
     return df
 
-# Fungsi membuat payload minimalis agar diterima server
+# Format Payload Persis Sesuai Kebutuhan Server KFA
 def build_payload(keyword, page, size):
-    payload = {
+    return {
         "page": int(page),
-        "size": int(size)
+        "size": int(size),
+        "search": keyword.strip() if keyword else "",
+        "kfa_code": "",
+        "bmhp": "",
+        "made_origin": "",
+        "manufacturer": "",
+        "registrar": ""
     }
-    # Hanya kirimkan keyword jika terisi
-    if keyword and keyword.strip():
-        payload["search"] = keyword.strip()
-    else:
-        payload["search"] = ""
-        
-    return payload
 
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.number_input("Jumlah Data Per Request (Size)", min_value=10, max_value=2000, value=500, step=100)
+# Size dibatasi maks 100 agar server Kemenkes tidak menolak/block request
+batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=100, step=10)
 max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
 search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong untuk semua data)", value="")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
 
-# Step 1: Pre-fetch schema
 @st.cache_data(ttl=3600)
 def get_variant_schema():
     payload = build_payload("", 1, 5)
@@ -88,7 +85,6 @@ def get_variant_schema():
         resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=10)
         if resp.status_code == 200:
             res_json = resp.json()
-            # Ekstrak dari berbagai kemungkinan key respons API
             items = []
             if isinstance(res_json, dict):
                 items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
@@ -132,7 +128,6 @@ selected_columns = st.multiselect(
 
 st.divider()
 
-# Tombol Ekstraksi Data
 start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="primary")
 
 if start_download:
@@ -153,7 +148,6 @@ if start_download:
             if response.status_code == 200:
                 res_json = response.json()
                 
-                # Ekstrak items secara fleksibel
                 items = []
                 if isinstance(res_json, dict):
                     items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
@@ -164,7 +158,7 @@ if start_download:
                 
                 if not items:
                     if page == 1:
-                        status_text.warning("⚠️ Tidak ada data yang ditemukan. Coba periksa kembali kata kunci pencarian atau turunkan ukuran Size di sidebar.")
+                        status_text.warning("⚠️ Tidak ada data yang ditemukan. Coba masukkan kata kunci pencarian singkat (misal: 'cath' atau 'syringe').")
                     else:
                         status_text.success(f"✅ Penarikan data selesai! Total **{len(all_data)}** data varian berhasil diambil.")
                     break
@@ -172,7 +166,6 @@ if start_download:
                 all_data.extend(items)
                 status_text.info(f"🔄 Berhasil mengambil **{len(items)}** varian dari Halaman {page} (Total Sementara: **{len(all_data)}** data)")
                 
-                # Render preview
                 df_current = parse_items_to_df(all_data)
                 if selected_columns:
                     cols_to_show = [c for c in selected_columns if c in df_current.columns]
@@ -200,7 +193,6 @@ if start_download:
     if all_data:
         st.session_state["all_fetched_data"] = all_data
 
-# Ekspor Data
 if st.session_state["all_fetched_data"]:
     st.divider()
     st.subheader("📥 Download Hasil Data")
