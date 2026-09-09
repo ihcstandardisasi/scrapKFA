@@ -13,7 +13,8 @@ st.set_page_config(
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
 st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
 
-URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-variant/search-variant"
+# Menggunakan endpoint template yang stabil
+URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/search-template"
 
 headers = {
     "Accept": "application/json, text/plain, */*",
@@ -23,12 +24,14 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
+# Pemetaan komprehensif ke Bahasa Indonesia
 COLUMN_MAPPING = {
     "kfa_code": "Kode KFA (PA)",
     "kfaCode": "Kode KFA (PA)",
     "name": "Nama produk varian",
     "product_variant_name": "Nama produk varian",
     "productVariantName": "Nama produk varian",
+    "product_template_name": "Nama Template Produk",
     "nie": "Nomor ijin edar",
     "registrar": "Pemilik NIE",
     "registrar_name": "Pemilik NIE",
@@ -40,6 +43,41 @@ COLUMN_MAPPING = {
     "madeOrigin": "Asal Produk",
     "bmhp": "BMHP"
 }
+
+def build_payload(keyword, page, size):
+    return {
+        "page": int(page),
+        "size": int(size),
+        "search": keyword.strip() if keyword else "",
+        "kfa_code": "",
+        "bmhp": "",
+        "made_origin": "",
+        "manufacturer": "",
+        "registrar": ""
+    }
+
+# Fungsi mengekstrak dan membongkar varian dari respons template
+def extract_variants_from_templates(template_items):
+    extracted = []
+    if not template_items:
+        return extracted
+        
+    for item in template_items:
+        # Jika item langsung berupa varian
+        if "nie" in item or "product_variant_name" in item:
+            extracted.append(item)
+        # Jika varian terbungkus di dalam array 'variants' atau 'product_variants'
+        elif "variants" in item and isinstance(item["variants"], list):
+            for var in item["variants"]:
+                extracted.append(var)
+        elif "product_variants" in item and isinstance(item["product_variants"], list):
+            for var in item["product_variants"]:
+                extracted.append(var)
+        else:
+            # Fallback menggunakan data template utama
+            extracted.append(item)
+            
+    return extracted
 
 def parse_items_to_df(items):
     if not items:
@@ -55,23 +93,11 @@ def parse_items_to_df(items):
     df.rename(columns=renamed_cols, inplace=True)
     return df
 
-def build_payload(keyword, page, size):
-    return {
-        "page": int(page),
-        "size": int(size),
-        "search": keyword.strip(),
-        "kfa_code": "",
-        "bmhp": "",
-        "made_origin": "",
-        "manufacturer": "",
-        "registrar": ""
-    }
-
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=100, step=10)
-max_pages = st.sidebar.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Dikosongkan = Penarikan Luas Berbasis Prefix 2 Huruf)", value="cath")
+batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=200, value=100, step=10)
+max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
+search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Ketikan 'cath' atau kosongkan untuk semua data)", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
@@ -80,19 +106,13 @@ if "all_fetched_data" not in st.session_state:
 def get_variant_schema(sample_query):
     payload = build_payload(sample_query, 1, 5)
     try:
-        resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=10)
+        resp = requests.post(URL_TEMPLATE, headers=headers, json=payload, timeout=10)
         if resp.status_code == 200:
             res_json = resp.json()
-            items = []
-            if isinstance(res_json, dict):
-                items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
-                if isinstance(items, dict):
-                    items = items.get('items') or items.get('data') or []
-            elif isinstance(res_json, list):
-                items = res_json
-
-            if items:
-                df_sample = parse_items_to_df(items)
+            raw_items = res_json.get('items') or res_json.get('data') or []
+            variant_items = extract_variants_from_templates(raw_items)
+            if variant_items:
+                df_sample = parse_items_to_df(variant_items)
                 return list(df_sample.columns)
     except Exception:
         pass
@@ -105,8 +125,7 @@ def get_variant_schema(sample_query):
         "Pabrik"
     ]
 
-sample_query = search_keyword.strip() if len(search_keyword.strip()) >= 2 else "cath"
-sample_columns = get_variant_schema(sample_query)
+sample_columns = get_variant_schema(search_keyword)
 
 PREFERRED_ORDER = [
     "Kode KFA (PA)",
@@ -130,88 +149,65 @@ st.divider()
 start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="primary")
 
 if start_download:
-    all_raw_data = []
-    seen_ids = set()
+    all_raw_variants = []
+    page = 1
     
     status_text = st.empty()
     table_placeholder = st.empty()
 
-    # Jika pencarian kosong, gunakan daftar prefix 2 huruf umum di istilah alkes
-    if len(search_keyword.strip()) >= 2:
-        keywords_to_search = [search_keyword.strip()]
-    elif len(search_keyword.strip()) == 1:
-        status_text.warning("⚠️ Kata kunci minimal 2 karakter (misal: 'ca', 'sy', 'al').")
-        st.stop()
-    else:
-        # Daftar prefix 2 huruf umum untuk menyapu kategori alat kesehatan
-        keywords_to_search = ["ca", "sy", "ma", "se", "al", "in", "re", "ka", "me", "st", "ne", "su", "bl", "di", "ge", "te"]
-
-    for kw in keywords_to_search:
-        page = 1
-        st.toast(f"Memproses pencarian keyword: '{kw}'")
+    while True:
+        status_text.info(f"⏳ Sedang mengambil data Halaman **{page}** ({batch_size} item per request)...")
         
-        while True:
-            status_text.info(f"⏳ Kata kunci **'{kw}'** | Halaman **{page}** ({batch_size} item per request)...")
+        payload = build_payload(search_keyword, page, batch_size)
+        
+        try:
+            response = requests.post(URL_TEMPLATE, headers=headers, json=payload, timeout=30)
             
-            payload = build_payload(kw, page, batch_size)
-            
-            try:
-                response = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                res_json = response.json()
                 
-                if response.status_code == 200:
-                    res_json = response.json()
-                    
-                    items = []
-                    if isinstance(res_json, dict):
-                        items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
-                        if isinstance(items, dict):
-                            items = items.get('items') or items.get('data') or []
-                    elif isinstance(res_json, list):
-                        items = res_json
-                    
-                    if not items:
-                        break
-                        
-                    added_count = 0
-                    for item in items:
-                        code = item.get('kfa_code') or item.get('kfaCode') or item.get('id') or str(item)
-                        if code not in seen_ids:
-                            seen_ids.add(code)
-                            all_raw_data.append(item)
-                            added_count += 1
-                            
-                    status_text.info(f"🔄 Kata kunci **'{kw}'** | Halaman {page}: Berhasil menambah **{added_count}** data baru (Total Unik: **{len(all_raw_data)}**)")
-                    
-                    df_current = parse_items_to_df(all_raw_data)
-                    if selected_columns:
-                        cols_to_show = [c for c in selected_columns if c in df_current.columns]
-                        if cols_to_show:
-                            df_current = df_current[cols_to_show]
-                    table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
-                    
-                    if len(items) < batch_size:
-                        break
-                        
-                    if max_pages > 0 and page >= max_pages:
-                        break
-                        
-                    page += 1
-                elif response.status_code == 400:
-                    st.toast(f"⚠️ Keyword '{kw}' ditolak server (HTTP 400). Melanjutkan ke keyword berikutnya...", icon="⚠️")
-                    break
-                else:
-                    status_text.error(f"❌ HTTP Error {response.status_code} pada kata kunci '{kw}' halaman {page}.")
+                raw_items = []
+                if isinstance(res_json, dict):
+                    raw_items = res_json.get('items') or res_json.get('data') or res_json.get('content') or []
+                elif isinstance(res_json, list):
+                    raw_items = res_json
+                
+                if not raw_items:
+                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_raw_variants)}** data berhasil diambil.")
                     break
                     
-            except Exception as e:
-                status_text.error(f"❌ Terjadi kesalahan koneksi: {str(e)}")
+                # Extrak varian dari tiap template
+                variant_items = extract_variants_from_templates(raw_items)
+                all_raw_variants.extend(variant_items)
+                
+                status_text.info(f"🔄 Halaman {page}: Berhasil mengekstrak **{len(variant_items)}** varian (Total Sementara: **{len(all_raw_variants)}** data)")
+                
+                df_current = parse_items_to_df(all_raw_variants)
+                if selected_columns:
+                    cols_to_show = [c for c in selected_columns if c in df_current.columns]
+                    if cols_to_show:
+                        df_current = df_current[cols_to_show]
+                table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
+                
+                if len(raw_items) < batch_size:
+                    status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_raw_variants)}** data berhasil diambil.")
+                    break
+                    
+                if max_pages > 0 and page >= max_pages:
+                    status_text.warning(f"⚠️ Penarikan dihentikan karena mencapai batas halaman ({max_pages}). Total: **{len(all_raw_variants)}** data.")
+                    break
+                    
+                page += 1
+            else:
+                status_text.error(f"❌ HTTP Error {response.status_code} pada halaman {page}.")
                 break
+                
+        except Exception as e:
+            status_text.error(f"❌ Terjadi kesalahan koneksi: {str(e)}")
+            break
 
-    if all_raw_data:
-        status_text.success(f"✅ Penarikan data selesai! Total **{len(all_raw_data)}** data unik berhasil dikumpulkan.")
-        st.session_state["all_fetched_data"] = all_raw_data
-    else:
-        status_text.error("❌ Tidak ada data yang berhasil ditarik. Coba masukkan kata kunci pencarian yang lebih spesifik (minimal 2 huruf).")
+    if all_raw_variants:
+        st.session_state["all_fetched_data"] = all_raw_variants
 
 if st.session_state["all_fetched_data"]:
     st.divider()
@@ -238,7 +234,7 @@ if st.session_state["all_fetched_data"]:
             type="primary"
         )
     with col_dl2:
-        st.metric(label="Total Baris Data Varian", value=f"{len(df_final):,}")
+        st.metric(label="Total Baris Data", value=f"{len(df_final):,}")
         st.metric(label="Total Kolom Terpilih", value=f"{len(df_final.columns)}")
         
     st.subheader("👀 Preview Data Akhir (10 Baris Pertama)")
