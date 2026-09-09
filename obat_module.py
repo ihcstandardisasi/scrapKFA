@@ -6,7 +6,6 @@ import string
 
 BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/detail/"
 
-# Header browser lengkap untuk lolos dari proteksi API Gateway Kemenkes
 headers = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -19,7 +18,7 @@ headers = {
     "Sec-Fetch-Site": "same-origin"
 }
 
-# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
+# 105 Kombinasi Suku Kata Konsonan + Vokal + '9'
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
 OBAT_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
@@ -31,13 +30,13 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
-            "Nama Produk": item.get("name", ""),
-            "Merk Dagang": item.get("tradeName", ""),
-            "Unit Logistik Terkecil": item.get("uomName", ""),
-            "Bentuk Sediaan": item.get("dosageFormName", ""),
-            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else "",
-            "Nomor Izin Edar": item.get("nie", ""),
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
+            "Nama Produk": item.get("name") or item.get("product_variant_name") or item.get("productVariantName") or "",
+            "Merk Dagang": item.get("tradeName") or item.get("trade_name") or "",
+            "Unit Logistik Terkecil": item.get("uomName") or item.get("uom_name") or "",
+            "Bentuk Sediaan": item.get("dosageFormName") or item.get("dosage_form_name") or "",
+            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
+            "Nomor Izin Edar": item.get("nie") or "",
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
         }
     },
@@ -47,11 +46,11 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
-            "Nama Produk Cangkang": item.get("name", ""),
-            "Total Varian": item.get("totalVariants", 0),
-            "Unit Logistik": item.get("uomName", ""),
-            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else "",
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
+            "Nama Produk Cangkang": item.get("name") or item.get("productTemplateName") or "",
+            "Total Varian": item.get("totalVariants") or item.get("total_variants") or 0,
+            "Unit Logistik": item.get("uomName") or item.get("uom_name") or "",
+            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
         }
     },
@@ -61,13 +60,13 @@ CATEGORIES = {
         "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "parser": lambda item: {
-            "Kode KFA Kemasan": item.get("kfaCode", ""),
-            "Nama Varian": item.get("variantDisplayName", ""),
-            "Nama Kemasan": item.get("packageName", ""),
+            "Kode KFA Kemasan": item.get("kfaCode") or item.get("kfa_code") or "",
+            "Nama Varian": item.get("variantDisplayName") or item.get("variant_display_name") or "",
+            "Nama Kemasan": item.get("packageName") or item.get("package_name") or "",
             "Qty": item.get("qty", 0),
             "Harga (HET/KFA)": item.get("price", 0),
-            "Satuan (UOM)": item.get("uomName", ""),
-            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else ""
+            "Satuan (UOM)": item.get("uomName") or item.get("uom_name") or "",
+            "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or "")
         }
     },
     "Zat Aktif (Active Ingredients)": {
@@ -76,9 +75,9 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
-            "Nama Zat Aktif": item.get("name", ""),
-            "Satuan Dosis (UCUM)": item.get("ucumSymbol", "")
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
+            "Nama Zat Aktif": item.get("name") or "",
+            "Satuan Dosis (UCUM)": item.get("ucumSymbol") or item.get("ucum_symbol") or ""
         }
     }
 }
@@ -100,7 +99,7 @@ def render_obat_page():
     with col2:
         max_pages = st.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 105 Suku Kata 'xx9')", value="", key="obat_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 'xx9')", value="", key="obat_keyword")
         
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
@@ -111,7 +110,7 @@ def render_obat_page():
             keywords_to_process = [kw_clean]
         else:
             keywords_to_process = OBAT_SWEEP_PREFIXES
-            st.toast("⚡ Menjalankan Auto-Sweep presisi Obat (105 Kombinasi 'xx9')...", icon="⚡")
+            st.toast("⚡ Menjalankan Auto-Sweep 105 Suku Kata KFA Obat...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
@@ -126,11 +125,12 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
+                # Payload JSON standar camelCase resmi backend KFA Farmasi
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
                     "search": str(kw),
-                    "search_by": "name",
+                    "searchBy": "name",
                     "kfaCode": "",
                     "farmalkesType": "",
                     "registrar": "",
@@ -143,15 +143,24 @@ def render_obat_page():
                     resp = requests.post(target_url, headers=headers, json=payload, timeout=30)
                     if resp.status_code == 200:
                         res_json = resp.json()
-                        items = res_json.get("data", [])
-                        if isinstance(items, dict):
-                            items = items.get("data", [])
+                        
+                        # Parsing fleksibel untuk berbagai variasi struktur JSON response
+                        raw_data = res_json.get("data") or res_json.get("items") or []
+                        if isinstance(raw_data, dict):
+                            items = raw_data.get("items") or raw_data.get("data") or []
+                        elif isinstance(raw_data, list):
+                            items = raw_data
+                        else:
+                            items = []
                         
                         if not items:
                             break
                             
                         recent_added = []
                         for item in items:
+                            if not isinstance(item, dict):
+                                continue
+                                
                             parsed_item = config["parser"](item)
                             unique_key = parsed_item.get(config["key_id"]) or str(parsed_item)
                             
@@ -182,7 +191,7 @@ def render_obat_page():
             status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{config['endpoint']}.txt")
         else:
-            status.error("❌ Tidak ada data yang berhasil diambil.")
+            status.error("❌ Tidak ada data yang berhasil diambil. Periksa kembali koneksi atau kata kunci.")
 
 def _render_download(df, cols, filename):
     st.divider()
