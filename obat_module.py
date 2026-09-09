@@ -1,8 +1,8 @@
 import streamlit as st
-import requests
 import pandas as pd
 import io
 import string
+from curl_cffi import requests
 
 BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-variant/search-variant"
 BASE_URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-template/search-template"
@@ -11,12 +11,13 @@ BASE_URL_INGREDIENT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/ac
 
 headers = {
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Origin": "https://satusehat.kemkes.go.id",
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
 }
 
+# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
 OBAT_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
@@ -130,7 +131,14 @@ def render_obat_page():
                 }
                 
                 try:
-                    resp = requests.post(target_url, headers=headers, json=payload, timeout=30)
+                    # Meniru TLS Fingerprint Chrome 120 secara presisi lewat impersonate
+                    resp = requests.post(
+                        target_url, 
+                        headers=headers, 
+                        json=payload, 
+                        impersonate="chrome120", 
+                        timeout=30
+                    )
                     
                     if resp.status_code == 200:
                         res_json = resp.json()
