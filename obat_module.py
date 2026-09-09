@@ -105,18 +105,18 @@ def render_obat_page():
         while True:
             status.info(f"⏳ Mengambil Data dengan Kata Kunci: **'{active_search}'** | Halaman **{page}** ({batch_size} item/request)...")
             
-            # Payload lengkap persis dari browser DevTools untuk menghindari error HTTP 400
+            # Payload disesuaikan dengan format camelCase resmi backend KFA Farmasi
             payload = {
                 "page": int(page),
                 "size": int(batch_size),
                 "search": str(active_search),
                 "search_by": "name",
-                "kfa_code": "",
-                "farmalkes_type": "",
+                "kfaCode": "",
+                "farmalkesType": "",
                 "registrar": "",
                 "manufacturer": "",
-                "made_origin": "",
-                "product_template_id": ""
+                "madeOrigin": "",
+                "productTemplateId": ""
             }
             
             try:
