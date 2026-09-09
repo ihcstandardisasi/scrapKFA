@@ -85,16 +85,11 @@ def render_obat_page():
     with col2:
         max_pages = st.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian Obat", value="paracetamol", key="obat_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian (contoh: 'paracetamol', 'amox', 'ibu')", value="paracetamol", key="obat_keyword")
         
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
     if st.button(f"🚀 Mulai Penarikan Data {selected_cat_name}", type="primary"):
-        kw_clean = search_keyword.strip()
-        if not kw_clean:
-            st.warning("⚠️ Masukkan kata kunci pencarian (misal: 'paracetamol', 'amox', 'ibuprofen'). API KFA Obat mewajibkan kata kunci.")
-            st.stop()
-
         all_rows = []
         page = 1
         status = st.empty()
@@ -102,13 +97,16 @@ def render_obat_page():
         
         target_url = f"{BASE_URL_OBAT}{config['endpoint']}"
         
+        # Jika input kosong, gunakan default fallback kata kunci 3 karakter
+        active_search = search_keyword.strip() if search_keyword.strip() else "par"
+        
         while True:
-            status.info(f"⏳ Mengambil Halaman {page} ({batch_size} item/request)...")
+            status.info(f"⏳ Mengambil Data dengan Kata Kunci: **'{active_search}'** | Halaman **{page}** ({batch_size} item/request)...")
             
             payload = {
                 "page": int(page),
                 "size": int(batch_size),
-                "search": kw_clean,
+                "search": active_search,
                 "search_by": "name",
                 "farmalkes_type": ""
             }
@@ -120,23 +118,24 @@ def render_obat_page():
                     items = res_json.get("data", [])
                     
                     if not items:
-                        status.success(f"✅ Selesai! Total {len(all_rows)} data terambil.")
+                        status.success(f"✅ Penarikan Selesai! Total **{len(all_rows)}** data terambil.")
                         break
                         
                     for item in items:
                         all_rows.append(config["parser"](item))
                         
-                    status.info(f"🔄 Halaman {page}: +{len(items)} items (Total: {len(all_rows)})")
+                    status.info(f"🔄 Halaman {page}: +{len(items)} items (Total Sementara: {len(all_rows)})")
                     df_curr = pd.DataFrame(all_rows)
                     valid_c = [c for c in selected_cols if c in df_curr.columns]
-                    table_p.dataframe(df_curr[valid_c].tail(10), use_container_width=True)
+                    if valid_c:
+                        table_p.dataframe(df_curr[valid_c].tail(10), use_container_width=True)
                     
                     if len(items) < batch_size or (max_pages > 0 and page >= max_pages):
-                        status.success(f"✅ Penarikan Selesai! Total: {len(all_rows)} data.")
+                        status.success(f"✅ Penarikan Selesai! Total **{len(all_rows)}** data terambil.")
                         break
                     page += 1
                 else:
-                    status.error(f"❌ HTTP Error {resp.status_code} pada kata kunci '{kw_clean}' halaman {page}.")
+                    status.error(f"❌ HTTP Error {resp.status_code} pada halaman {page}.")
                     break
             except Exception as e:
                 status.error(f"❌ Error Koneksi: {str(e)}")
