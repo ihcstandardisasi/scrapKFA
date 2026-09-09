@@ -18,14 +18,6 @@ CATEGORIES = {
         "endpoint": "product-variants",
         "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
-        "payload_builder": lambda p, s, kw: {
-            "page": int(p),
-            "size": int(s),
-            "search": str(kw),
-            "search_by": "name",
-            "farmalkes_type": "",
-            "kfa_code": ""
-        },
         "parser": lambda item: {
             "Kode KFA": item.get("kfaCode", ""),
             "Nama Produk": item.get("name", ""),
@@ -41,14 +33,6 @@ CATEGORIES = {
         "endpoint": "product-templates",
         "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
-        "payload_builder": lambda p, s, kw: {
-            "page": int(p),
-            "size": int(s),
-            "search": str(kw),
-            "search_by": "name",
-            "farmalkes_type": "",
-            "kfa_code": ""
-        },
         "parser": lambda item: {
             "Kode KFA": item.get("kfaCode", ""),
             "Nama Produk Cangkang": item.get("name", ""),
@@ -62,14 +46,6 @@ CATEGORIES = {
         "endpoint": "product-packagings",
         "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
-        "payload_builder": lambda p, s, kw: {
-            "page": int(p),
-            "size": int(s),
-            "search": str(kw),
-            "search_by": "name",
-            "farmalkes_type": "",
-            "kfa_code": ""
-        },
         "parser": lambda item: {
             "Kode KFA Kemasan": item.get("kfaCode", ""),
             "Nama Varian": item.get("variantDisplayName", ""),
@@ -84,12 +60,6 @@ CATEGORIES = {
         "endpoint": "active-ingredients",
         "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
-        "payload_builder": lambda p, s, kw: {
-            "page": int(p),
-            "size": int(s),
-            "search": str(kw),
-            "search_by": "name"
-        },
         "parser": lambda item: {
             "Kode KFA": item.get("kfaCode", ""),
             "Nama Zat Aktif": item.get("name", ""),
@@ -135,8 +105,19 @@ def render_obat_page():
         while True:
             status.info(f"⏳ Mengambil Data dengan Kata Kunci: **'{active_search}'** | Halaman **{page}** ({batch_size} item/request)...")
             
-            # Membuat payload dinamis sesuai kebutuhan masing-masing kategori
-            payload = config["payload_builder"](page, batch_size, active_search)
+            # Payload lengkap persis dari browser DevTools untuk menghindari error HTTP 400
+            payload = {
+                "page": int(page),
+                "size": int(batch_size),
+                "search": str(active_search),
+                "search_by": "name",
+                "kfa_code": "",
+                "farmalkes_type": "",
+                "registrar": "",
+                "manufacturer": "",
+                "made_origin": "",
+                "product_template_id": ""
+            }
             
             try:
                 resp = requests.post(target_url, headers=headers, json=payload, timeout=30)
