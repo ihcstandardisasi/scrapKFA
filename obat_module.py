@@ -19,11 +19,11 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
             "Nama Produk": item.get("name") or item.get("productVariantName") or "",
-            "Merk Dagang": item.get("tradeName", ""),
-            "Unit Logistik Terkecil": item.get("uomName", ""),
-            "Bentuk Sediaan": item.get("dosageFormName", ""),
+            "Merk Dagang": item.get("tradeName") or item.get("trade_name") or "",
+            "Unit Logistik Terkecil": item.get("uomName") or item.get("uom_name") or "",
+            "Bentuk Sediaan": item.get("dosageFormName") or item.get("dosage_form_name") or "",
             "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
             "Nomor Izin Edar": item.get("nie", ""),
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
@@ -35,10 +35,10 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik", "Golongan Obat", "Fornas"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
             "Nama Produk Cangkang": item.get("name") or item.get("productTemplateName") or "",
             "Total Varian": item.get("totalVariants", 0),
-            "Unit Logistik": item.get("uomName", ""),
+            "Unit Logistik": item.get("uomName") or item.get("uom_name") or "",
             "Golongan Obat": item.get("farmalkesType", {}).get("name", "") if isinstance(item.get("farmalkesType"), dict) else str(item.get("farmalkesType") or ""),
             "Fornas": "Ya" if item.get("isFornas") else "Tidak"
         }
@@ -49,7 +49,7 @@ CATEGORIES = {
         "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)", "Golongan Obat"],
         "parser": lambda item: {
-            "Kode KFA Kemasan": item.get("kfaCode", ""),
+            "Kode KFA Kemasan": item.get("kfaCode") or item.get("kfa_code") or "",
             "Nama Varian": item.get("variantDisplayName", ""),
             "Nama Kemasan": item.get("packageName", ""),
             "Qty": item.get("qty", 0),
@@ -64,7 +64,7 @@ CATEGORIES = {
         "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "parser": lambda item: {
-            "Kode KFA": item.get("kfaCode", ""),
+            "Kode KFA": item.get("kfaCode") or item.get("kfa_code") or "",
             "Nama Zat Aktif": item.get("name", ""),
             "Satuan Dosis (UCUM)": item.get("ucumSymbol", "")
         }
@@ -88,7 +88,7 @@ def render_obat_page():
         type="password"
     )
     
-    show_debug = st.checkbox("🔍 Tampilkan Debug Logs (Respon Asli Server Kemenkes)", value=True)
+    show_debug = st.checkbox("🔍 Tampilkan Debug Logs", value=False)
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -136,16 +136,22 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
+                # Dual-naming Payload untuk melintasi validator snake_case & camelCase
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
                     "search": str(kw),
+                    "search_by": "name",
                     "searchBy": "name",
+                    "kfa_code": "",
                     "kfaCode": "",
+                    "farmalkes_type": "",
                     "farmalkesType": "",
                     "registrar": "",
                     "manufacturer": "",
+                    "made_origin": "",
                     "madeOrigin": "",
+                    "product_template_id": "",
                     "productTemplateId": ""
                 }
                 
@@ -154,20 +160,11 @@ def render_obat_page():
                     
                     if show_debug and page == 1:
                         with debug_container:
-                            st.subheader(f"🛠️ Debug Log untuk Kata Kunci: '{kw}'")
-                            st.write(f"**URL:** `{target_url}`")
-                            st.write(f"**HTTP Status:** `{resp.status_code}`")
-                            st.code(json.dumps(payload, indent=2), language="json")
-                            st.text_area("Response Body Raw (Mentah):", value=resp.text[:1000], height=150, key=f"debug_{kw}_{page}")
+                            st.write(f"**URL:** `{target_url}` | **Status:** `{resp.status_code}`")
+                            st.text_area("Response Raw:", value=resp.text[:500], height=100, key=f"dbg_{kw}_{page}")
                     
                     if resp.status_code == 200:
-                        try:
-                            res_json = resp.json()
-                        except Exception as json_err:
-                            if show_debug:
-                                debug_container.error(f"Gagal parse JSON: {json_err}")
-                            break
-                        
+                        res_json = resp.json()
                         items = []
                         if isinstance(res_json, dict):
                             data_field = res_json.get("data")
@@ -216,7 +213,7 @@ def render_obat_page():
             status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{config['endpoint']}.txt")
         else:
-            status.error("❌ Tidak ada data terambil. Periksa Debug Log di atas untuk melihat respon mentah dari server Kemenkes.")
+            status.error("❌ Tidak ada data terambil.")
 
 def _render_download(df, cols, filename):
     st.divider()
