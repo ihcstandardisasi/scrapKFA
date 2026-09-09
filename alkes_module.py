@@ -15,11 +15,9 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Definisi Konsonan & Vokal
+# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
-
-# Menghasilkan 105 kombinasi (konsonan + vokal + '9') -> ba9, ca9, da9 ... zo9
 ALKES_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
 
 def render_alkes_page():
@@ -55,22 +53,26 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
             keywords_to_process = [kw_clean]
         else:
             keywords_to_process = ALKES_SWEEP_PREFIXES
-            st.toast("⚡ Menjalankan Auto-Sweep presisi (105 Kombinasi Konsonan-Vokal+9)...", icon="⚡")
+            st.toast("⚡ Menjalankan Auto-Sweep presisi (105 Kombinasi)...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
         status = st.empty()
         table_p = st.empty()
         
-        for kw in keywords_to_process:
+        total_kw = len(keywords_to_process)
+        
+        for idx, kw in enumerate(keywords_to_process, start=1):
             page = 1
             while True:
-                status.info(f"⏳ Kata Kunci: **'{kw}'** | Halaman **{page}** ({batch_size} item/request)...")
+                status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
+                
                 payload = {
                     "page": int(page), "size": int(batch_size),
                     "search": kw,
                     "kfa_code": "", "bmhp": "", "made_origin": "", "manufacturer": "", "registrar": "", "product_template_id": ""
                 }
+                
                 try:
                     resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
                     if resp.status_code == 200:
@@ -80,7 +82,7 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
                         if not items:
                             break
                             
-                        added_count = 0
+                        recent_added = []
                         for item in items:
                             kfa_code = item.get("kfa_code") or item.get("kfaCode") or item.get("code") or ""
                             
@@ -100,21 +102,23 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
                             reg = item.get("registrar") or item.get("registrar_name") or ""
                             man = item.get("manufacturer") or item.get("manufacturer_name") or ""
                             
-                            all_rows.append({
+                            row_data = {
                                 "Kode KFA (PA)": kfa_code,
                                 "Nama produk varian": variant_name,
                                 "Nomor ijin edar": item.get("nie") or item.get("nie_number") or "",
                                 "Pemilik NIE": reg.get("name") if isinstance(reg, dict) else str(reg),
                                 "Pabrik": man.get("name") if isinstance(man, dict) else str(man),
                                 "Asal Produk": item.get("made_origin") or item.get("madeOrigins") or ""
-                            })
-                            added_count += 1
+                            }
+                            all_rows.append(row_data)
+                            recent_added.append(row_data)
                         
-                        status.info(f"🔄 Kata Kunci **'{kw}'** | Halaman {page}: +{added_count} data baru (Total Unik: {len(all_rows)})")
-                        df_curr = pd.DataFrame(all_rows)
-                        valid_c = [c for c in selected_cols if c in df_curr.columns]
-                        if valid_c and not df_curr.empty:
-                            table_p.dataframe(df_curr[valid_c].tail(10), use_container_width=True)
+                        # Tampilkan hanya 10 sampel data terbaru agar RAM browser tetap ringan
+                        if recent_added:
+                            df_preview = pd.DataFrame(recent_added)
+                            valid_c = [c for c in selected_cols if c in df_preview.columns]
+                            if valid_c:
+                                table_p.dataframe(df_preview[valid_c].tail(10), use_container_width=True)
                         
                         if len(items) < batch_size or (max_pages > 0 and page >= max_pages):
                             break
@@ -122,11 +126,11 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
                     else:
                         break
                 except Exception as e:
-                    status.error(f"❌ Error: {str(e)}")
+                    status.error(f"❌ Error pada kata kunci '{kw}': {str(e)}")
                     break
                 
         if all_rows:
-            status.success(f"✅ Penarikan Selesai! Total **{len(all_rows)}** data varian unik berhasil dikumpulkan.")
+            status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data varian unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, "kfa_alkes_variant.txt")
 
 def _fetch_alkes_template(batch_size, max_pages, search_keyword):
@@ -139,17 +143,20 @@ def _fetch_alkes_template(batch_size, max_pages, search_keyword):
             keywords_to_process = [kw_clean]
         else:
             keywords_to_process = ALKES_SWEEP_PREFIXES
-            st.toast("⚡ Menjalankan Auto-Sweep presisi (105 Kombinasi Konsonan-Vokal+9)...", icon="⚡")
+            st.toast("⚡ Menjalankan Auto-Sweep presisi (105 Kombinasi)...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
         status = st.empty()
         table_p = st.empty()
         
-        for kw in keywords_to_process:
+        total_kw = len(keywords_to_process)
+        
+        for idx, kw in enumerate(keywords_to_process, start=1):
             page = 1
             while True:
-                status.info(f"⏳ Kata Kunci: **'{kw}'** | Halaman **{page}** ({batch_size} item/request)...")
+                status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
+                
                 payload = {
                     "page": int(page), "size": int(batch_size),
                     "search": kw,
@@ -162,7 +169,7 @@ def _fetch_alkes_template(batch_size, max_pages, search_keyword):
                         if not items:
                             break
                             
-                        added_count = 0
+                        recent_added = []
                         for item in items:
                             kfa_code = item.get("kfaCode") or item.get("kfa_code") or ""
                             if kfa_code and kfa_code in seen_ids:
@@ -170,16 +177,16 @@ def _fetch_alkes_template(batch_size, max_pages, search_keyword):
                             if kfa_code:
                                 seen_ids.add(kfa_code)
 
-                            all_rows.append({
+                            row_data = {
                                 "Kode KFA": kfa_code,
                                 "Nama produk cangkang": item.get("productTemplateName") or item.get("name") or ""
-                            })
-                            added_count += 1
+                            }
+                            all_rows.append(row_data)
+                            recent_added.append(row_data)
                             
-                        status.info(f"🔄 Kata Kunci **'{kw}'** | Halaman {page}: +{added_count} data baru (Total Unik: {len(all_rows)})")
-                        df_curr = pd.DataFrame(all_rows)
-                        if not df_curr.empty:
-                            table_p.dataframe(df_curr.tail(10), use_container_width=True)
+                        if recent_added:
+                            df_preview = pd.DataFrame(recent_added)
+                            table_p.dataframe(df_preview.tail(10), use_container_width=True)
                         
                         if len(items) < batch_size or (max_pages > 0 and page >= max_pages):
                             break
@@ -187,11 +194,11 @@ def _fetch_alkes_template(batch_size, max_pages, search_keyword):
                     else:
                         break
                 except Exception as e:
-                    status.error(f"❌ Error: {str(e)}")
+                    status.error(f"❌ Error pada kata kunci '{kw}': {str(e)}")
                     break
                 
         if all_rows:
-            status.success(f"✅ Penarikan Selesai! Total **{len(all_rows)}** data cangkang unik berhasil dikumpulkan.")
+            status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data cangkang unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, "kfa_alkes_cangkang.txt")
 
 def _render_download(df, cols, filename):
