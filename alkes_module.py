@@ -57,22 +57,37 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
                 resp = requests.post(URL_VARIANT, headers=headers, json=payload, timeout=30)
                 if resp.status_code == 200:
                     items = resp.json().get('items') or resp.json().get('data') or []
-                    if isinstance(items, dict): items = items.get('items') or []
+                    if isinstance(items, dict): items = items.get('items') or items.get('data') or []
                     if not items:
                         status.success(f"✅ Selesai! Total {len(all_rows)} data varian terambil.")
                         break
                         
                     for item in items:
-                        reg = item.get("registrar") or ""
-                        man = item.get("manufacturer") or ""
+                        # Ekstraksi Nama Varian dengan fallback komprehensif
+                        variant_name = (
+                            item.get("product_variant_name") 
+                            or item.get("productVariantName") 
+                            or item.get("name") 
+                            or item.get("product_template_name")
+                            or item.get("productTemplateName")
+                            or ""
+                        )
+                        
+                        reg = item.get("registrar") or item.get("registrar_name") or ""
+                        man = item.get("manufacturer") or item.get("manufacturer_name") or ""
+                        
+                        registrar_name = reg.get("name") if isinstance(reg, dict) else str(reg)
+                        manufacturer_name = man.get("name") if isinstance(man, dict) else str(man)
+                        
                         all_rows.append({
-                            "Kode KFA (PA)": item.get("kfa_code") or item.get("kfaCode") or "",
-                            "Nama produk varian": item.get("product_variant_name") or item.get("name") or "",
-                            "Nomor ijin edar": item.get("nie") or "",
-                            "Pemilik NIE": reg.get("name") if isinstance(reg, dict) else str(reg),
-                            "Pabrik": man.get("name") if isinstance(man, dict) else str(man),
-                            "Asal Produk": item.get("made_origin") or ""
+                            "Kode KFA (PA)": item.get("kfa_code") or item.get("kfaCode") or item.get("code") or "",
+                            "Nama produk varian": variant_name,
+                            "Nomor ijin edar": item.get("nie") or item.get("nie_number") or "",
+                            "Pemilik NIE": registrar_name,
+                            "Pabrik": manufacturer_name,
+                            "Asal Produk": item.get("made_origin") or item.get("madeOrigins") or ""
                         })
+                        
                     status.info(f"🔄 Halaman {page}: +{len(items)} items (Total: {len(all_rows)})")
                     df_curr = pd.DataFrame(all_rows)
                     valid_c = [c for c in selected_cols if c in df_curr.columns]
