@@ -13,7 +13,6 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
 }
 
-# Pemetaan Konfigurasi 4 Kategori Obat
 CATEGORIES = {
     "Produk Varian": {
         "endpoint": "product-variants",
@@ -91,6 +90,11 @@ def render_obat_page():
     selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
     
     if st.button(f"🚀 Mulai Penarikan Data {selected_cat_name}", type="primary"):
+        kw_clean = search_keyword.strip()
+        if not kw_clean:
+            st.warning("⚠️ Masukkan kata kunci pencarian (misal: 'paracetamol', 'amox', 'ibuprofen'). API KFA Obat mewajibkan kata kunci.")
+            st.stop()
+
         all_rows = []
         page = 1
         status = st.empty()
@@ -100,10 +104,11 @@ def render_obat_page():
         
         while True:
             status.info(f"⏳ Mengambil Halaman {page} ({batch_size} item/request)...")
+            
             payload = {
                 "page": int(page),
                 "size": int(batch_size),
-                "search": search_keyword.strip() if search_keyword else "paracetamol",
+                "search": kw_clean,
                 "search_by": "name",
                 "farmalkes_type": ""
             }
@@ -131,7 +136,7 @@ def render_obat_page():
                         break
                     page += 1
                 else:
-                    status.error(f"❌ HTTP Error {resp.status_code}")
+                    status.error(f"❌ HTTP Error {resp.status_code} pada kata kunci '{kw_clean}' halaman {page}.")
                     break
             except Exception as e:
                 status.error(f"❌ Error Koneksi: {str(e)}")
