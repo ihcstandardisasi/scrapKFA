@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import io
 import string
+import json
 
 BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/detail/"
 
@@ -87,6 +88,8 @@ def render_obat_page():
         type="password"
     )
     
+    show_debug = st.checkbox("🔍 Tampilkan Debug Logs (Respon Asli Server Kemenkes)", value=True)
+    
     col1, col2, col3 = st.columns(3)
     with col1:
         batch_size = st.number_input("Jumlah Data Per Request (Size)", min_value=1, max_value=1000, value=100, step=10, key="obat_size")
@@ -108,6 +111,7 @@ def render_obat_page():
         seen_ids = set()
         status = st.empty()
         table_p = st.empty()
+        debug_container = st.container()
         
         target_url = f"{BASE_URL_OBAT}{config['endpoint']}"
         total_kw = len(keywords_to_process)
@@ -132,7 +136,6 @@ def render_obat_page():
             while True:
                 status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
                 
-                # Payload Murni CamelCase Tanpa Lapisan Karakter Ilegal
                 payload = {
                     "page": int(page),
                     "size": int(batch_size),
@@ -149,10 +152,22 @@ def render_obat_page():
                 try:
                     resp = requests.post(target_url, headers=request_headers, json=payload, timeout=30)
                     
+                    if show_debug and page == 1:
+                        with debug_container:
+                            st.subheader(f"🛠️ Debug Log untuk Kata Kunci: '{kw}'")
+                            st.write(f"**URL:** `{target_url}`")
+                            st.write(f"**HTTP Status:** `{resp.status_code}`")
+                            st.code(json.dumps(payload, indent=2), language="json")
+                            st.text_area("Response Body Raw (Mentah):", value=resp.text[:1000], height=150, key=f"debug_{kw}_{page}")
+                    
                     if resp.status_code == 200:
-                        res_json = resp.json()
+                        try:
+                            res_json = resp.json()
+                        except Exception as json_err:
+                            if show_debug:
+                                debug_container.error(f"Gagal parse JSON: {json_err}")
+                            break
                         
-                        # Unwrapping berlapis untuk struktur JSON KFA Farmasi
                         items = []
                         if isinstance(res_json, dict):
                             data_field = res_json.get("data")
@@ -192,7 +207,6 @@ def render_obat_page():
                             break
                         page += 1
                     else:
-                        status.error(f"❌ HTTP Status {resp.status_code}: {resp.text[:200]}")
                         break
                 except Exception as e:
                     status.error(f"❌ Error Koneksi: {str(e)}")
@@ -202,7 +216,7 @@ def render_obat_page():
             status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
             _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{config['endpoint']}.txt")
         else:
-            status.error("❌ Tidak ada data terambil. Coba jalankan ulang penarikan.")
+            status.error("❌ Tidak ada data terambil. Periksa Debug Log di atas untuk melihat respon mentah dari server Kemenkes.")
 
 def _render_download(df, cols, filename):
     st.divider()
