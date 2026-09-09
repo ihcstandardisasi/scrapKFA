@@ -4,29 +4,26 @@ import pandas as pd
 import io
 import string
 
-# URL Base API Pencarian Resmi KFA Farmasi (Bukan /detail/)
-URL_VARIANT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-variant/search-variant"
-URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-template/search-template"
-URL_PACKAGING = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-packaging/search-packaging"
-URL_INGREDIENT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/active-ingredient/search-active-ingredient"
+BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-variant/search-variant"
+BASE_URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-template/search-template"
+BASE_URL_PACKAGING = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-packaging/search-packaging"
+BASE_URL_INGREDIENT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/active-ingredient/search-active-ingredient"
 
 headers = {
     "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Origin": "https://satusehat.kemkes.go.id",
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
 }
 
-# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
 OBAT_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
 
 CATEGORIES = {
     "Produk Varian": {
-        "url": URL_VARIANT,
+        "url": BASE_URL_OBAT,
         "key_id": "Kode KFA",
         "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
         "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
@@ -42,7 +39,7 @@ CATEGORIES = {
         }
     },
     "Produk Cangkang (Templates)": {
-        "url": URL_TEMPLATE,
+        "url": BASE_URL_TEMPLATE,
         "key_id": "Kode KFA",
         "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik"],
         "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik"],
@@ -54,7 +51,7 @@ CATEGORIES = {
         }
     },
     "Kemasan Produk (Packagings)": {
-        "url": URL_PACKAGING,
+        "url": BASE_URL_PACKAGING,
         "key_id": "Kode KFA Kemasan",
         "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)"],
         "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)"],
@@ -68,7 +65,7 @@ CATEGORIES = {
         }
     },
     "Zat Aktif (Active Ingredients)": {
-        "url": URL_INGREDIENT,
+        "url": BASE_URL_INGREDIENT,
         "key_id": "Kode KFA",
         "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
         "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
