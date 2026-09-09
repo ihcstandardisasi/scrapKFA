@@ -70,8 +70,8 @@ def build_payload(keyword, page, size):
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
 batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=100, step=10)
-max_pages = st.sidebar.number_input("Batas Maksimal Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1)
-search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Jika kosong, akan auto-fetch kata kunci huruf vokal)", value="cath")
+max_pages = st.sidebar.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1)
+search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Dikosongkan = Penarikan Luas Berbasis Prefix 2 Huruf)", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
@@ -105,7 +105,7 @@ def get_variant_schema(sample_query):
         "Pabrik"
     ]
 
-sample_query = search_keyword if search_keyword.strip() else "cath"
+sample_query = search_keyword.strip() if len(search_keyword.strip()) >= 2 else "cath"
 sample_columns = get_variant_schema(sample_query)
 
 PREFERRED_ORDER = [
@@ -131,17 +131,24 @@ start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="prim
 
 if start_download:
     all_raw_data = []
-    seen_ids = set()  # Untuk membuang data duplikat jika menggunakan multiple keyword
+    seen_ids = set()
     
     status_text = st.empty()
     table_placeholder = st.empty()
 
-    # Jika user tidak mengisi kata kunci, gunakan daftar huruf umum
-    keywords_to_search = [search_keyword.strip()] if search_keyword.strip() else ["a", "e", "i", "o", "u"]
+    # Jika pencarian kosong, gunakan daftar prefix 2 huruf umum di istilah alkes
+    if len(search_keyword.strip()) >= 2:
+        keywords_to_search = [search_keyword.strip()]
+    elif len(search_keyword.strip()) == 1:
+        status_text.warning("⚠️ Kata kunci minimal 2 karakter (misal: 'ca', 'sy', 'al').")
+        st.stop()
+    else:
+        # Daftar prefix 2 huruf umum untuk menyapu kategori alat kesehatan
+        keywords_to_search = ["ca", "sy", "ma", "se", "al", "in", "re", "ka", "me", "st", "ne", "su", "bl", "di", "ge", "te"]
 
     for kw in keywords_to_search:
         page = 1
-        st.toast(f"Mulai mencari kata kunci: '{kw}'")
+        st.toast(f"Memproses pencarian keyword: '{kw}'")
         
         while True:
             status_text.info(f"⏳ Kata kunci **'{kw}'** | Halaman **{page}** ({batch_size} item per request)...")
@@ -165,7 +172,6 @@ if start_download:
                     if not items:
                         break
                         
-                    # Eliminasi duplikat berdasarkan kfa_code atau kfaCode
                     added_count = 0
                     for item in items:
                         code = item.get('kfa_code') or item.get('kfaCode') or item.get('id') or str(item)
@@ -190,8 +196,11 @@ if start_download:
                         break
                         
                     page += 1
+                elif response.status_code == 400:
+                    st.toast(f"⚠️ Keyword '{kw}' ditolak server (HTTP 400). Melanjutkan ke keyword berikutnya...", icon="⚠️")
+                    break
                 else:
-                    status_text.error(f"❌ HTTP Error {response.status_code} pada halaman {page}.")
+                    status_text.error(f"❌ HTTP Error {response.status_code} pada kata kunci '{kw}' halaman {page}.")
                     break
                     
             except Exception as e:
@@ -201,6 +210,8 @@ if start_download:
     if all_raw_data:
         status_text.success(f"✅ Penarikan data selesai! Total **{len(all_raw_data)}** data unik berhasil dikumpulkan.")
         st.session_state["all_fetched_data"] = all_raw_data
+    else:
+        status_text.error("❌ Tidak ada data yang berhasil ditarik. Coba masukkan kata kunci pencarian yang lebih spesifik (minimal 2 huruf).")
 
 if st.session_state["all_fetched_data"]:
     st.divider()
