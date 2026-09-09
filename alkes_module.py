@@ -15,8 +15,10 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
-# Membuat kombinasi 2 huruf dari 'aa' sampai 'zz' (676 kombinasi)
-COMBOS_2CHAR = [f"{a}{b}" for a in string.ascii_lowercase for b in string.ascii_lowercase]
+# Membuat daftar kombinasi 3-karakter otomatis dengan akhiran '9' (aa9 - zz9 & 009 - 999)
+ALPHA_COMBOS = [f"{a}{b}9" for a in string.ascii_lowercase for b in string.ascii_lowercase]
+NUM_COMBOS = [f"{i}9" for i in range(10)]  # 09, 19, ..., 99 (2 digit min) -> disesuaikan jika perlu
+ALKES_SWEEP_PREFIXES = ALPHA_COMBOS + NUM_COMBOS
 
 def render_alkes_page():
     st.header("🏥 KFA Alat Kesehatan (Alkes)")
@@ -33,7 +35,7 @@ def render_alkes_page():
     with col2:
         max_pages = st.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="alkes_pages")
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep Seluruh Data)", value="", key="alkes_keyword")
+        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 'xx9')", value="", key="alkes_keyword")
 
     if sub_menu == "Produk Varian Alkes":
         _fetch_alkes_variant(batch_size, max_pages, search_keyword)
@@ -50,8 +52,8 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
         if kw_clean:
             keywords_to_process = [kw_clean]
         else:
-            keywords_to_process = COMBOS_2CHAR
-            st.toast("⚡ Menjalankan Auto-Sweep cepat menggunakan kombinasi 2 huruf...", icon="⚡")
+            keywords_to_process = ALKES_SWEEP_PREFIXES
+            st.toast("⚡ Menjalankan Auto-Sweep cepat dengan akhiran '9' (aa9 - zz9)...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
@@ -80,7 +82,7 @@ def _fetch_alkes_variant(batch_size, max_pages, search_keyword):
                         for item in items:
                             kfa_code = item.get("kfa_code") or item.get("kfaCode") or item.get("code") or ""
                             
-                            # Deduplikasi otomatis
+                            # Deduplikasi berdasarkan Kode KFA
                             if kfa_code and kfa_code in seen_ids:
                                 continue
                             if kfa_code:
@@ -135,8 +137,8 @@ def _fetch_alkes_template(batch_size, max_pages, search_keyword):
         if kw_clean:
             keywords_to_process = [kw_clean]
         else:
-            keywords_to_process = COMBOS_2CHAR
-            st.toast("⚡ Menjalankan Auto-Sweep cepat menggunakan kombinasi 2 huruf...", icon="⚡")
+            keywords_to_process = ALKES_SWEEP_PREFIXES
+            st.toast("⚡ Menjalankan Auto-Sweep cepat dengan akhiran '9' (aa9 - zz9)...", icon="⚡")
 
         all_rows = []
         seen_ids = set()
