@@ -11,10 +11,9 @@ st.set_page_config(
 )
 
 st.title("🏥 SATUSEHAT KFA Alkes Produk Varian Extractor")
-st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** secara lengkap dari SATUSEHAT Kemenkes RI.")
+st.markdown("Aplikasi ini menarik master data **Produk Varian Alat Kesehatan (KFA)** dari SATUSEHAT Kemenkes RI.")
 
 URL_SEARCH = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/search-template"
-URL_DETAIL = "https://satusehat.kemkes.go.id/kfa-browser/alkes/api/product-template/get-template-by-id"
 
 headers = {
     "Accept": "application/json, text/plain, */*",
@@ -24,82 +23,25 @@ headers = {
     "Referer": "https://satusehat.kemkes.go.id/kfa-browser/alkes"
 }
 
+# Pemetaan resmi kunci JSON API Kemenkes ke Label Bahasa Indonesia
+COLUMN_MAPPING = {
+    "kfaCode": "Kode KFA (PA)",
+    "productTemplateName": "Nama produk varian",
+    "nie": "Nomor ijin edar",
+    "registrar": "Pemilik NIE",
+    "manufacturer": "Pabrik",
+    "madeOrigins": "Asal Produk",
+    "productVariantCount": "Jumlah Varian"
+}
+
 # Sidebar Pengaturan
 st.sidebar.header("⚙️ Konfigurasi Request")
-batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=100, value=50, step=10)
+batch_size = st.sidebar.slider("Jumlah Data Per Request (Size)", min_value=10, max_value=500, value=100, step=10)
 max_pages = st.sidebar.number_input("Batas Maksimal Halaman (0 = Tanpa Batas)", min_value=0, value=0, step=1)
 search_keyword = st.sidebar.text_input("Kata Kunci Pencarian (Biarkan kosong atau isi misal 'cath')", value="cath")
 
 if "all_fetched_data" not in st.session_state:
     st.session_state["all_fetched_data"] = None
-
-# Fungsi penarik nilai fleksibel dari dictionary
-def extract_value(d, keys):
-    if not isinstance(d, dict):
-        return ""
-    for k in keys:
-        if k in d and d[k]:
-            val = d[k]
-            if isinstance(val, str):
-                return val.strip()
-            elif isinstance(val, dict):
-                return val.get("name") or val.get("title") or str(val)
-            elif isinstance(val, list) and len(val) > 0:
-                first = val[0]
-                if isinstance(first, dict):
-                    return first.get("name") or first.get("title") or str(first)
-                return str(first)
-            return str(val)
-    return ""
-
-def fetch_template_detail(template_id):
-    try:
-        url = f"{URL_DETAIL}?id={template_id}"
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code == 200:
-            return resp.json()
-    except Exception:
-        pass
-    return None
-
-def parse_item_to_rows(item):
-    rows = []
-    if not isinstance(item, dict):
-        return rows
-        
-    # Ambil Kode KFA
-    kfa_code = extract_value(item, ["kfa_code", "kfaCode", "code", "id"])
-    template_name = extract_value(item, ["name", "product_template_name", "template_name"])
-    
-    # Cari list varian
-    variants = item.get("product_variants") or item.get("variants") or item.get("items") or []
-    
-    if isinstance(variants, list) and len(variants) > 0:
-        for v in variants:
-            var_dict = v if isinstance(v, dict) else {}
-            row = {
-                "Kode KFA (PA)": kfa_code,
-                "Nama produk varian": extract_value(var_dict, ["name", "product_variant_name", "variant_name"]) or template_name,
-                "Nomor ijin edar": extract_value(var_dict, ["nie", "nie_number", "no_nie"]) or extract_value(item, ["nie", "nie_number", "no_nie"]),
-                "Pemilik NIE": extract_value(var_dict, ["registrar", "registrar_name", "pemilik_nie"]) or extract_value(item, ["registrar", "registrar_name", "pemilik_nie"]),
-                "Pabrik": extract_value(var_dict, ["manufacturer", "manufacturer_name", "pabrik"]) or extract_value(item, ["manufacturer", "manufacturer_name", "pabrik"]),
-                "BMHP": extract_value(var_dict, ["bmhp"]) or extract_value(item, ["bmhp"]),
-                "Asal Produk": extract_value(var_dict, ["made_origin", "madeOrigin"]) or extract_value(item, ["made_origin", "madeOrigin"])
-            }
-            rows.append(row)
-    else:
-        row = {
-            "Kode KFA (PA)": kfa_code,
-            "Nama produk varian": template_name,
-            "Nomor ijin edar": extract_value(item, ["nie", "nie_number", "no_nie"]),
-            "Pemilik NIE": extract_value(item, ["registrar", "registrar_name", "pemilik_nie"]),
-            "Pabrik": extract_value(item, ["manufacturer", "manufacturer_name", "pabrik"]),
-            "BMHP": extract_value(item, ["bmhp"]),
-            "Asal Produk": extract_value(item, ["made_origin", "madeOrigin"])
-        }
-        rows.append(row)
-        
-    return rows
 
 ALL_POSSIBLE_COLUMNS = [
     "Kode KFA (PA)",
@@ -107,8 +49,8 @@ ALL_POSSIBLE_COLUMNS = [
     "Nomor ijin edar",
     "Pemilik NIE",
     "Pabrik",
-    "BMHP",
-    "Asal Produk"
+    "Asal Produk",
+    "Jumlah Varian"
 ]
 
 st.subheader("📌 Pilih Kolom yang Ingin Diunduh")
@@ -120,7 +62,7 @@ selected_columns = st.multiselect(
 
 st.divider()
 
-start_download = st.button("🚀 Mulai Penarikan Data Produk Varian Lengkap", type="primary")
+start_download = st.button("🚀 Mulai Penarikan Data Produk Varian", type="primary")
 
 if start_download:
     all_rows = []
@@ -130,7 +72,7 @@ if start_download:
     table_placeholder = st.empty()
 
     while True:
-        status_text.info(f"⏳ Mengambil daftar Halaman **{page}** ({batch_size} item per request)...")
+        status_text.info(f"⏳ Sedang mengambil data Halaman **{page}** ({batch_size} item per request)...")
         
         payload = {
             "page": int(page),
@@ -148,28 +90,26 @@ if start_download:
             
             if response.status_code == 200:
                 res_json = response.json()
-                raw_items = res_json.get('items') or res_json.get('data') or []
+                items = res_json.get('items') or res_json.get('data') or []
                 
-                if not raw_items:
-                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** data varian berhasil diambil.")
+                if not items:
+                    status_text.success(f"✅ Penarikan data selesai! Total **{len(all_rows)}** data berhasil diambil.")
                     break
                     
-                page_rows = []
-                for idx, item in enumerate(raw_items):
-                    item_id = item.get("id") or item.get("product_template_id")
-                    status_text.info(f"⏳ Halaman **{page}** | Mengambil detail item {idx+1}/{len(raw_items)}...")
-                    
-                    detail = None
-                    if item_id:
-                        detail = fetch_template_detail(item_id)
-                    
-                    # Gunakan detail jika ada, jika tidak fallback ke item utama
-                    target_item = detail if detail else item
-                    rows = parse_item_to_rows(target_item)
-                    page_rows.extend(rows)
+                # Parsing dan pemetaan langsung
+                for item in items:
+                    row = {
+                        "Kode KFA (PA)": item.get("kfaCode", ""),
+                        "Nama produk varian": item.get("productTemplateName", ""),
+                        "Nomor ijin edar": item.get("nie", ""),
+                        "Pemilik NIE": item.get("registrar", ""),
+                        "Pabrik": item.get("manufacturer", ""),
+                        "Asal Produk": item.get("madeOrigins", ""),
+                        "Jumlah Varian": item.get("productVariantCount", "")
+                    }
+                    all_rows.append(row)
                 
-                all_rows.extend(page_rows)
-                status_text.info(f"🔄 Halaman {page}: Berhasil mengekstrak **{len(page_rows)}** baris varian (Total: **{len(all_rows)}** data)")
+                status_text.info(f"🔄 Halaman {page}: Berhasil mengambil **{len(items)}** data (Total Sementara: **{len(all_rows)}** data)")
                 
                 df_current = pd.DataFrame(all_rows)
                 if selected_columns:
@@ -178,7 +118,7 @@ if start_download:
                         df_current = df_current[cols_to_show]
                 table_placeholder.dataframe(df_current.tail(10), use_container_width=True)
                 
-                if len(raw_items) < batch_size:
+                if len(items) < batch_size:
                     status_text.success(f"✅ Mencapai akhir halaman. Total **{len(all_rows)}** data berhasil diambil.")
                     break
                     
