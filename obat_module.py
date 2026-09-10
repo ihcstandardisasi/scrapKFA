@@ -1,198 +1,151 @@
 import streamlit as st
 import pandas as pd
 import io
+import time
 import string
-from curl_cffi import requests
+import os
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 
-BASE_URL_OBAT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-variant/search-variant"
-BASE_URL_TEMPLATE = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-template/search-template"
-BASE_URL_PACKAGING = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/product-packaging/search-packaging"
-BASE_URL_INGREDIENT = "https://satusehat.kemkes.go.id/kfa-browser/farmasi/api/active-ingredient/search-active-ingredient"
+BASE_URL_FARMASI = "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
+CHECKPOINT_FILE = "kfa_obat_checkpoint.csv"
 
-headers = {
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Content-Type": "application/json",
-    "Origin": "https://satusehat.kemkes.go.id",
-    "Referer": "https://satusehat.kemkes.go.id/kfa-browser/farmasi"
-}
-
-# 105 Kombinasi Suku Kata (Konsonan + Vokal + '9')
 VOWELS = ['a', 'i', 'u', 'e', 'o']
 CONSONANTS = [c for c in string.ascii_lowercase if c not in VOWELS]
 OBAT_SWEEP_PREFIXES = [f"{c}{v}9" for c in CONSONANTS for v in VOWELS]
 
-CATEGORIES = {
-    "Produk Varian": {
-        "url": BASE_URL_OBAT,
-        "key_id": "Kode KFA",
-        "all_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
-        "default_cols": ["Kode KFA", "Nama Produk", "Merk Dagang", "Unit Logistik Terkecil", "Bentuk Sediaan", "Golongan Obat", "Nomor Izin Edar", "Fornas"],
-        "parser": lambda item: {
-            "Kode KFA": item.get("kfa_code") or item.get("kfaCode") or "",
-            "Nama Produk": item.get("product_variant_name") or item.get("name") or "",
-            "Merk Dagang": item.get("trade_name") or item.get("tradeName") or "",
-            "Unit Logistik Terkecil": item.get("uom_name") or item.get("uomName") or "",
-            "Bentuk Sediaan": item.get("dosage_form_name") or item.get("dosageFormName") or "",
-            "Golongan Obat": item.get("farmalkes_type") or item.get("farmalkesType") or "",
-            "Nomor Izin Edar": item.get("nie") or "",
-            "Fornas": "Ya" if item.get("is_fornas") or item.get("isFornas") else "Tidak"
-        }
-    },
-    "Produk Cangkang (Templates)": {
-        "url": BASE_URL_TEMPLATE,
-        "key_id": "Kode KFA",
-        "all_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik"],
-        "default_cols": ["Kode KFA", "Nama Produk Cangkang", "Total Varian", "Unit Logistik"],
-        "parser": lambda item: {
-            "Kode KFA": item.get("kfa_code") or item.get("kfaCode") or "",
-            "Nama Produk Cangkang": item.get("product_template_name") or item.get("name") or "",
-            "Total Varian": item.get("total_variants") or item.get("totalVariants") or 0,
-            "Unit Logistik": item.get("uom_name") or item.get("uomName") or ""
-        }
-    },
-    "Kemasan Produk (Packagings)": {
-        "url": BASE_URL_PACKAGING,
-        "key_id": "Kode KFA Kemasan",
-        "all_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)"],
-        "default_cols": ["Kode KFA Kemasan", "Nama Varian", "Nama Kemasan", "Qty", "Harga (HET/KFA)", "Satuan (UOM)"],
-        "parser": lambda item: {
-            "Kode KFA Kemasan": item.get("kfa_code") or item.get("kfaCode") or "",
-            "Nama Varian": item.get("variant_display_name") or item.get("variantDisplayName") or "",
-            "Nama Kemasan": item.get("package_name") or item.get("packageName") or "",
-            "Qty": item.get("qty", 0),
-            "Harga (HET/KFA)": item.get("price", 0),
-            "Satuan (UOM)": item.get("uom_name") or item.get("uomName") or ""
-        }
-    },
-    "Zat Aktif (Active Ingredients)": {
-        "url": BASE_URL_INGREDIENT,
-        "key_id": "Kode KFA",
-        "all_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
-        "default_cols": ["Kode KFA", "Nama Zat Aktif", "Satuan Dosis (UCUM)"],
-        "parser": lambda item: {
-            "Kode KFA": item.get("kfa_code") or item.get("kfaCode") or "",
-            "Nama Zat Aktif": item.get("name", ""),
-            "Satuan Dosis (UCUM)": item.get("ucum_symbol") or item.get("ucumSymbol") or ""
-        }
-    }
-}
+CATEGORIES = [
+    "Produk Varian",
+    "Produk Cangkang (Templates)",
+    "Kemasan Produk (Packagings)",
+    "Zat Aktif (Active Ingredients)"
+]
+
+def init_driver(headless=True):
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+    
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.get(BASE_URL_FARMASI)
+    time.sleep(3)
+    return driver
 
 def render_obat_page():
-    st.header("💊 KFA Farmasi / Obat")
+    st.header("💊 KFA Farmasi / Obat (Auto-Save & Anti-Crash Mode)")
     
-    selected_cat_name = st.radio(
-        "Pilih Kategori Obat:",
-        list(CATEGORIES.keys()),
-        horizontal=True
-    )
-    
-    config = CATEGORIES[selected_cat_name]
+    selected_cat_name = st.radio("Pilih Kategori Obat:", CATEGORIES, horizontal=True)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        batch_size = st.number_input("Jumlah Data Per Request (Size)", min_value=1, max_value=1000, value=100, step=10, key="obat_size")
+        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep):", value="", key="obat_keyword")
     with col2:
-        max_pages = st.number_input("Batas Halaman Per Kata Kunci (0 = Tanpa Batas)", min_value=0, value=0, step=1, key="obat_pages")
+        headless_mode = st.checkbox("Running Tersembunyi (Headless)", value=True)
     with col3:
-        search_keyword = st.text_input("Kata Kunci Pencarian (Kosongkan untuk Auto-Sweep 'xx9')", value="", key="obat_keyword")
-        
-    selected_cols = st.multiselect("Pilih Kolom:", config["all_cols"], default=config["default_cols"], key="obat_cols")
-    
-    if st.button(f"🚀 Mulai Penarikan Data {selected_cat_name}", type="primary"):
+        restart_interval = st.number_input("Restart Browser Tiap X Kata Kunci", min_value=5, max_value=50, value=15)
+
+    if st.button("🚀 Mulai Penarikan Data (Anti-Crash)", type="primary"):
         kw_clean = search_keyword.strip()
         keywords_to_process = [kw_clean] if kw_clean else OBAT_SWEEP_PREFIXES
         
-        if not kw_clean:
-            st.toast("⚡ Menjalankan Auto-Sweep 105 Suku Kata KFA Obat...", icon="⚡")
-
-        all_rows = []
-        seen_ids = set()
         status = st.empty()
         table_p = st.empty()
         
-        target_url = config["url"]
+        seen_ids = set()
+        
+        # Load data checkpoint terdahulu jika ada
+        if os.path.exists(CHECKPOINT_FILE):
+            try:
+                existing_df = pd.read_csv(CHECKPOINT_FILE, sep="|")
+                if "Kode KFA" in existing_df.columns:
+                    seen_ids = set(existing_df["Kode KFA"].astype(str).tolist())
+                    st.toast(f"🔄 Memuat checkpoint: {len(seen_ids):,} data lama ditemukan.", icon="📂")
+            except Exception:
+                pass
+
         total_kw = len(keywords_to_process)
+        driver = None
+        
+        try:
+            driver = init_driver(headless=headless_mode)
+            
+            for idx, kw in enumerate(keywords_to_process, start=1):
+                status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Keyword: **'{kw}'** | Total Unik tersimpan: **{len(seen_ids):,}**")
+                
+                # Restart browser berkala untuk mencegah kebocoran memori RAM
+                if idx > 1 and idx % restart_interval == 0:
+                    status.warning("🔄 Daur ulang memori browser...")
+                    driver.quit()
+                    time.sleep(2)
+                    driver = init_driver(headless=headless_mode)
 
-        for idx, kw in enumerate(keywords_to_process, start=1):
-            page = 1
-            while True:
-                status.info(f"⏳ Progress: **[{idx}/{total_kw}]** | Kata Kunci: **'{kw}'** | Halaman **{page}** | Total Unik: **{len(all_rows):,}**")
-                
-                payload = {
-                    "page": int(page),
-                    "size": int(batch_size),
-                    "search": str(kw),
-                    "kfa_code": "",
-                    "farmalkes_type": "",
-                    "made_origin": "",
-                    "manufacturer": "",
-                    "registrar": ""
-                }
-                
                 try:
-                    # Meniru TLS Fingerprint Chrome 120 secara presisi lewat impersonate
-                    resp = requests.post(
-                        target_url, 
-                        headers=headers, 
-                        json=payload, 
-                        impersonate="chrome120", 
-                        timeout=30
+                    search_box = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @placeholder='Search' or contains(@class, 'input')]"))
                     )
+                    search_box.clear()
+                    search_box.send_keys(kw)
+                    search_box.submit()
+                    time.sleep(2.5)
                     
-                    if resp.status_code == 200:
-                        res_json = resp.json()
-                        items = res_json.get('items') or res_json.get('data') or []
-                        if isinstance(items, dict):
-                            items = items.get('items') or items.get('data') or []
-
-                        if not items:
-                            break
+                    rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
+                    new_added = []
+                    
+                    for row in rows:
+                        cols = row.find_elements(By.TAG_NAME, "td")
+                        if len(cols) >= 2:
+                            kfa_code = cols[0].text.strip()
+                            name_val = cols[1].text.strip()
                             
-                        recent_added = []
-                        for item in items:
-                            if not isinstance(item, dict):
-                                continue
-                                
-                            parsed_item = config["parser"](item)
-                            unique_key = parsed_item.get(config["key_id"]) or str(parsed_item)
-                            
-                            if unique_key and unique_key in seen_ids:
-                                continue
-                            if unique_key:
-                                seen_ids.add(unique_key)
-
-                            all_rows.append(parsed_item)
-                            recent_added.append(parsed_item)
-                            
-                        if recent_added:
-                            df_preview = pd.DataFrame(recent_added)
-                            valid_c = [c for c in selected_cols if c in df_preview.columns]
-                            if valid_c:
-                                table_p.dataframe(df_preview[valid_c].tail(10), use_container_width=True)
+                            if kfa_code and kfa_code not in seen_ids:
+                                seen_ids.add(kfa_code)
+                                item = {
+                                    "Kode KFA": kfa_code,
+                                    "Nama Obat": name_val,
+                                    "Kategori": selected_cat_name,
+                                    "Keyword": kw
+                                }
+                                new_added.append(item)
+                    
+                    # Simpan langsung ke file lokal (Auto-Checkpoint)
+                    if new_added:
+                        df_new = pd.DataFrame(new_added)
+                        header_needed = not os.path.exists(CHECKPOINT_FILE)
+                        df_new.to_csv(CHECKPOINT_FILE, mode='a', index=False, header=header_needed, sep="|")
+                        table_p.dataframe(df_new.tail(10), use_container_width=True)
                         
-                        if len(items) < batch_size or (max_pages > 0 and page >= max_pages):
-                            break
-                        page += 1
-                    else:
-                        status.error(f"❌ Error HTTP {resp.status_code}: {resp.text[:200]}")
-                        break
-                except Exception as e:
-                    status.error(f"❌ Error Koneksi: {str(e)}")
-                    break
-                    
-        if all_rows:
-            status.success(f"✅ Penarikan Selesai! Total **{len(all_rows):,}** data obat unik berhasil dikumpulkan.")
-            _render_download(pd.DataFrame(all_rows), selected_cols, f"kfa_obat_{selected_cat_name}.txt")
-        else:
-            status.error("❌ Tidak ada data terambil.")
+                except Exception as kw_err:
+                    # Lanjut ke kata kunci berikutnya jika 1 kata kunci bermasalah
+                    continue
 
-def _render_download(df, cols, filename):
+            if driver:
+                driver.quit()
+
+            if os.path.exists(CHECKPOINT_FILE):
+                final_df = pd.read_csv(CHECKPOINT_FILE, sep="|")
+                status.success(f"✅ Penarikan Selesai! Total **{len(final_df):,}** data tersimpan di file checkpoint.")
+                _render_download(final_df, "kfa_obat_final.txt")
+            else:
+                status.error("❌ Tidak ada data terambil.")
+
+        except Exception as e:
+            if driver:
+                driver.quit()
+            status.error(f"❌ Terjadi kesalahan fatal: {str(e)}")
+
+def _render_download(df, filename):
     st.divider()
-    valid_cols = [c for c in cols if c in df.columns]
-    if valid_cols:
-        df = df[valid_cols]
-    
     buf = io.StringIO()
     df.to_csv(buf, sep="|", index=False, encoding="utf-8")
     
@@ -200,5 +153,5 @@ def _render_download(df, cols, filename):
     with col1:
         st.download_button("📄 Download File TXT (Separator |)", data=buf.getvalue().encode("utf-8"), file_name=filename, mime="text/plain", type="primary")
     with col2:
-        st.metric("Total Baris Data Unik", f"{len(df):,}")
+        st.metric("Total Baris Data Unik Terkumpul", f"{len(df):,}")
     st.dataframe(df.head(10), use_container_width=True)
